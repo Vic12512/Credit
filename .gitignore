@@ -1,0 +1,10 @@
+.env
+.vs/
+.vscode/
+**/bin/
+**/obj/
+**/node_modules/
+**/dist/
+*.user
+*.suo
+.tmp-pdf-extract/

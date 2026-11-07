@@ -50,8 +50,8 @@ namespace Snic.Api.Infrastructure.Migrations
                 {
                     id = table.Column<short>(type: "smallint", nullable: false)
                         .Annotation("SqlServer:Identity", "1, 1"),
-                    code = table.Column<string>(type: "varchar(40)", unicode: false, maxLength: 40, nullable: false),
-                    name = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
+                    code = table.Column<string>(type: "varchar(30)", unicode: false, maxLength: 30, nullable: false),
+                    name = table.Column<string>(type: "nvarchar(80)", maxLength: 80, nullable: false),
                     is_active = table.Column<bool>(type: "bit", nullable: false, defaultValue: true)
                 },
                 constraints: table =>
@@ -65,8 +65,8 @@ namespace Snic.Api.Infrastructure.Migrations
                 {
                     id = table.Column<short>(type: "smallint", nullable: false)
                         .Annotation("SqlServer:Identity", "1, 1"),
-                    code = table.Column<string>(type: "varchar(40)", unicode: false, maxLength: 40, nullable: false),
-                    name = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
+                    code = table.Column<string>(type: "varchar(30)", unicode: false, maxLength: 30, nullable: false),
+                    name = table.Column<string>(type: "nvarchar(80)", maxLength: 80, nullable: false),
                     is_active = table.Column<bool>(type: "bit", nullable: false, defaultValue: true)
                 },
                 constraints: table =>
@@ -80,8 +80,8 @@ namespace Snic.Api.Infrastructure.Migrations
                 {
                     id = table.Column<short>(type: "smallint", nullable: false)
                         .Annotation("SqlServer:Identity", "1, 1"),
-                    code = table.Column<string>(type: "varchar(40)", unicode: false, maxLength: 40, nullable: false),
-                    name = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
+                    code = table.Column<string>(type: "varchar(30)", unicode: false, maxLength: 30, nullable: false),
+                    name = table.Column<string>(type: "nvarchar(80)", maxLength: 80, nullable: false),
                     is_active = table.Column<bool>(type: "bit", nullable: false, defaultValue: true)
                 },
                 constraints: table =>
@@ -121,6 +121,10 @@ namespace Snic.Api.Infrastructure.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_score_rules", x => x.id);
+                    table.CheckConstraint("CK_score_rules_days", "[min_days_past_due] >= 0 AND ([max_days_past_due] IS NULL OR [max_days_past_due] >= [min_days_past_due])");
+                    table.CheckConstraint("CK_score_rules_default_percentage", "[estimated_default_percentage] BETWEEN 0 AND 100");
+                    table.CheckConstraint("CK_score_rules_risk_level", "[risk_level] IN ('LOW', 'MEDIUM', 'HIGH')");
+                    table.CheckConstraint("CK_score_rules_score", "[score] BETWEEN 0 AND 100");
                 });
 
             migrationBuilder.CreateTable(
@@ -143,6 +147,7 @@ namespace Snic.Api.Infrastructure.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_institutions", x => x.id);
+                    table.CheckConstraint("CK_institutions_deactivation", "([is_active] = 1 AND [deactivated_at] IS NULL) OR ([is_active] = 0 AND [deactivated_at] IS NOT NULL)");
                     table.ForeignKey(
                         name: "FK_institutions_institution_types_institution_type_id",
                         column: x => x.institution_type_id,
@@ -175,7 +180,8 @@ namespace Snic.Api.Infrastructure.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_user_accounts", x => x.id);
-                    table.CheckConstraint("CK_user_accounts_role_institution", "([role_id] = 1 AND [institution_id] IS NULL) OR ([role_id] <> 1 AND [institution_id] IS NOT NULL)");
+                    table.CheckConstraint("CK_user_accounts_deactivation", "([is_active] = 1 AND [deactivated_at] IS NULL) OR ([is_active] = 0 AND [deactivated_at] IS NOT NULL)");
+                    table.CheckConstraint("CK_user_accounts_failed_attempts", "[failed_login_attempts] >= 0");
                     table.ForeignKey(
                         name: "FK_user_accounts_institutions_institution_id",
                         column: x => x.institution_id,
@@ -212,6 +218,9 @@ namespace Snic.Api.Infrastructure.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_persons", x => x.id);
+                    table.CheckConstraint("CK_persons_birth_date", "[birth_date] IS NULL OR [birth_date] <= CONVERT(date, SYSDATETIME())");
+                    table.CheckConstraint("CK_persons_deactivation", "([is_active] = 1 AND [deactivated_at] IS NULL) OR ([is_active] = 0 AND [deactivated_at] IS NOT NULL)");
+                    table.CheckConstraint("CK_persons_national_id", "LEN([national_id]) = 11 AND [national_id] NOT LIKE '%[^0-9]%'");
                     table.ForeignKey(
                         name: "FK_persons_user_accounts_created_by_account_id",
                         column: x => x.created_by_account_id,
@@ -243,6 +252,8 @@ namespace Snic.Api.Infrastructure.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_audit_logs", x => x.id);
+                    table.CheckConstraint("CK_audit_logs_new_values_json", "[new_values] IS NULL OR ISJSON([new_values]) = 1");
+                    table.CheckConstraint("CK_audit_logs_old_values_json", "[old_values] IS NULL OR ISJSON([old_values]) = 1");
                     table.ForeignKey(
                         name: "FK_audit_logs_institutions_institution_id",
                         column: x => x.institution_id,
@@ -291,6 +302,11 @@ namespace Snic.Api.Infrastructure.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_credit_products", x => x.id);
+                    table.CheckConstraint("CK_credit_products_amounts", "[approved_amount] >= 0 AND [current_balance] >= 0");
+                    table.CheckConstraint("CK_credit_products_currency", "LEN([currency_code]) = 3 AND [currency_code] NOT LIKE '%[^A-Z]%'");
+                    table.CheckConstraint("CK_credit_products_dates", "[closing_date] IS NULL OR [closing_date] >= [opening_date]");
+                    table.CheckConstraint("CK_credit_products_days_past_due", "[latest_days_past_due] >= 0");
+                    table.CheckConstraint("CK_credit_products_deactivation", "([is_active] = 1 AND [deactivated_at] IS NULL) OR ([is_active] = 0 AND [deactivated_at] IS NOT NULL)");
                     table.ForeignKey(
                         name: "FK_credit_products_institutions_institution_id",
                         column: x => x.institution_id,
@@ -353,6 +369,11 @@ namespace Snic.Api.Infrastructure.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_credit_history_events", x => x.id);
+                    table.CheckConstraint("CK_credit_history_amounts", "([amount_due] IS NULL OR [amount_due] >= 0) AND ([amount_paid] IS NULL OR [amount_paid] >= 0) AND ([balance_after] IS NULL OR [balance_after] >= 0)");
+                    table.CheckConstraint("CK_credit_history_days_past_due", "[days_past_due] >= 0");
+                    table.CheckConstraint("CK_credit_history_deactivation", "([is_active] = 1 AND [deactivated_at] IS NULL) OR ([is_active] = 0 AND [deactivated_at] IS NOT NULL)");
+                    table.CheckConstraint("CK_credit_history_not_self_superseded", "[supersedes_event_id] IS NULL OR [supersedes_event_id] <> [id]");
+                    table.CheckConstraint("CK_credit_history_period", "[period_start] IS NULL OR [period_end] IS NULL OR [period_end] >= [period_start]");
                     table.ForeignKey(
                         name: "FK_credit_history_events_credit_event_types_credit_event_type_id",
                         column: x => x.credit_event_type_id,
@@ -396,13 +417,13 @@ namespace Snic.Api.Infrastructure.Migrations
                 columns: new[] { "id", "code", "description", "is_active", "name" },
                 values: new object[,]
                 {
-                    { (short)1, "PRODUCT_OPENED", null, true, "Producto abierto" },
-                    { (short)2, "PERIOD_REPORTED", null, true, "Período reportado" },
-                    { (short)3, "BALANCE_UPDATED", null, true, "Saldo actualizado" },
-                    { (short)4, "PAYMENT_REPORTED", null, true, "Pago reportado" },
-                    { (short)5, "DELINQUENCY_REPORTED", null, true, "Mora reportada" },
-                    { (short)6, "PRODUCT_CLOSED", null, true, "Producto cerrado" },
-                    { (short)7, "PRODUCT_CANCELLED", null, true, "Producto cancelado" }
+                    { (short)1, "PRODUCT_OPENED", "Registra la apertura del producto crediticio.", true, "Producto abierto" },
+                    { (short)2, "PERIOD_REPORTED", "Registra la información consolidada de un período.", true, "Período reportado" },
+                    { (short)3, "BALANCE_UPDATED", "Registra una modificación del saldo vigente.", true, "Saldo actualizado" },
+                    { (short)4, "PAYMENT_REPORTED", "Registra un pago informado por la institución.", true, "Pago reportado" },
+                    { (short)5, "DELINQUENCY_REPORTED", "Registra morosidad o días de atraso.", true, "Atraso reportado" },
+                    { (short)6, "PRODUCT_CLOSED", "Registra el cierre del producto.", true, "Producto cerrado" },
+                    { (short)7, "PRODUCT_CANCELLED", "Registra la cancelación del producto.", true, "Producto cancelado" }
                 });
 
             migrationBuilder.InsertData(
@@ -412,8 +433,8 @@ namespace Snic.Api.Infrastructure.Migrations
                 {
                     { (short)1, "BANK", true, "Banco" },
                     { (short)2, "COOPERATIVE", true, "Cooperativa" },
-                    { (short)3, "FINANCIAL_ENTITY", true, "Entidad financiera" },
-                    { (short)4, "COMMERCIAL_COMPANY", true, "Empresa comercial" }
+                    { (short)3, "FINANCIAL", true, "Entidad financiera" },
+                    { (short)4, "COMMERCIAL", true, "Empresa comercial" }
                 });
 
             migrationBuilder.InsertData(
@@ -422,9 +443,9 @@ namespace Snic.Api.Infrastructure.Migrations
                 values: new object[,]
                 {
                     { (short)1, "PENDING", true, "Pendiente" },
-                    { (short)2, "PARTIAL", true, "Parcial" },
+                    { (short)2, "PARTIAL", true, "Pago parcial" },
                     { (short)3, "PAID_ON_TIME", true, "Pagado a tiempo" },
-                    { (short)4, "PAID_LATE", true, "Pagado tarde" },
+                    { (short)4, "PAID_LATE", true, "Pagado con atraso" },
                     { (short)5, "OVERDUE", true, "Vencido" }
                 });
 
@@ -453,9 +474,9 @@ namespace Snic.Api.Infrastructure.Migrations
                 columns: new[] { "id", "code", "description", "is_active", "name" },
                 values: new object[,]
                 {
-                    { (short)1, "ADMINISTRATOR", null, true, "Administrador" },
-                    { (short)2, "CONSUMER", null, true, "Consumidor" },
-                    { (short)3, "DATA_ENTRY", null, true, "Registrador" }
+                    { (short)1, "ADMINISTRATOR", "Administra instituciones, cuentas, catálogos y supervisión general.", true, "Administrador" },
+                    { (short)2, "CONSUMER", "Consulta información crediticia autorizada.", true, "Entidad consumidora" },
+                    { (short)3, "DATA_ENTRY", "Registra y actualiza datos pertenecientes a su institución.", true, "Registrador" }
                 });
 
             migrationBuilder.InsertData(
@@ -496,30 +517,10 @@ namespace Snic.Api.Infrastructure.Migrations
                 columns: new[] { "person_id", "occurred_at" });
 
             migrationBuilder.CreateIndex(
-                name: "IX_credit_event_types_code",
+                name: "UQ_credit_event_types_code",
                 table: "credit_event_types",
                 column: "code",
                 unique: true);
-
-            migrationBuilder.CreateIndex(
-                name: "IX_credit_history_events_credit_event_type_id",
-                table: "credit_history_events",
-                column: "credit_event_type_id");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_credit_history_events_payment_status_id",
-                table: "credit_history_events",
-                column: "payment_status_id");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_credit_history_events_product_status_after_id",
-                table: "credit_history_events",
-                column: "product_status_after_id");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_credit_history_events_supersedes_event_id",
-                table: "credit_history_events",
-                column: "supersedes_event_id");
 
             migrationBuilder.CreateIndex(
                 name: "IX_credit_history_product_date",
@@ -542,11 +543,6 @@ namespace Snic.Api.Infrastructure.Migrations
                 columns: new[] { "event_date", "days_past_due" });
 
             migrationBuilder.CreateIndex(
-                name: "IX_credit_products_created_by_account_id",
-                table: "credit_products",
-                column: "created_by_account_id");
-
-            migrationBuilder.CreateIndex(
                 name: "IX_credit_products_institution_status",
                 table: "credit_products",
                 columns: new[] { "institution_id", "product_status_id" });
@@ -562,37 +558,15 @@ namespace Snic.Api.Infrastructure.Migrations
                 columns: new[] { "person_id", "institution_id", "product_type_id" });
 
             migrationBuilder.CreateIndex(
-                name: "IX_credit_products_product_status_id",
-                table: "credit_products",
-                column: "product_status_id");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_credit_products_product_type_id",
-                table: "credit_products",
-                column: "product_type_id");
-
-            migrationBuilder.CreateIndex(
                 name: "UQ_credit_products_institution_external_id",
                 table: "credit_products",
                 columns: new[] { "institution_id", "external_product_identifier" },
                 unique: true);
 
             migrationBuilder.CreateIndex(
-                name: "IX_institution_types_code",
+                name: "UQ_institution_types_code",
                 table: "institution_types",
                 column: "code",
-                unique: true);
-
-            migrationBuilder.CreateIndex(
-                name: "IX_institutions_code",
-                table: "institutions",
-                column: "code",
-                unique: true);
-
-            migrationBuilder.CreateIndex(
-                name: "IX_institutions_rnc",
-                table: "institutions",
-                column: "rnc",
                 unique: true);
 
             migrationBuilder.CreateIndex(
@@ -601,7 +575,19 @@ namespace Snic.Api.Infrastructure.Migrations
                 columns: new[] { "institution_type_id", "is_active" });
 
             migrationBuilder.CreateIndex(
-                name: "IX_payment_statuses_code",
+                name: "UQ_institutions_code",
+                table: "institutions",
+                column: "code",
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "UQ_institutions_rnc",
+                table: "institutions",
+                column: "rnc",
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "UQ_payment_statuses_code",
                 table: "payment_statuses",
                 column: "code",
                 unique: true);
@@ -612,35 +598,30 @@ namespace Snic.Api.Infrastructure.Migrations
                 column: "is_active");
 
             migrationBuilder.CreateIndex(
-                name: "IX_persons_created_by_account_id",
-                table: "persons",
-                column: "created_by_account_id");
-
-            migrationBuilder.CreateIndex(
                 name: "IX_persons_name",
                 table: "persons",
                 columns: new[] { "first_surname", "first_name" });
 
             migrationBuilder.CreateIndex(
-                name: "IX_persons_national_id",
+                name: "UQ_persons_national_id",
                 table: "persons",
                 column: "national_id",
                 unique: true);
 
             migrationBuilder.CreateIndex(
-                name: "IX_product_statuses_code",
+                name: "UQ_product_statuses_code",
                 table: "product_statuses",
                 column: "code",
                 unique: true);
 
             migrationBuilder.CreateIndex(
-                name: "IX_product_types_code",
+                name: "UQ_product_types_code",
                 table: "product_types",
                 column: "code",
                 unique: true);
 
             migrationBuilder.CreateIndex(
-                name: "IX_roles_code",
+                name: "UQ_roles_code",
                 table: "roles",
                 column: "code",
                 unique: true);
@@ -649,13 +630,6 @@ namespace Snic.Api.Infrastructure.Migrations
                 name: "UQ_score_rules_range",
                 table: "score_rules",
                 columns: new[] { "min_days_past_due", "max_days_past_due" },
-                unique: true,
-                filter: "[max_days_past_due] IS NOT NULL");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_user_accounts_email",
-                table: "user_accounts",
-                column: "email",
                 unique: true);
 
             migrationBuilder.CreateIndex(
@@ -669,7 +643,13 @@ namespace Snic.Api.Infrastructure.Migrations
                 columns: new[] { "role_id", "is_active" });
 
             migrationBuilder.CreateIndex(
-                name: "IX_user_accounts_username",
+                name: "UQ_user_accounts_email",
+                table: "user_accounts",
+                column: "email",
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "UQ_user_accounts_username",
                 table: "user_accounts",
                 column: "username",
                 unique: true);

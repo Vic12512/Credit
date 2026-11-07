@@ -1,6 +1,37 @@
-@Snic.Api_HostAddress = http://localhost:5041
+@host = http://localhost:5041
+@token = pegue_aqui_el_accessToken
 
-GET {{Snic.Api_HostAddress}}/weatherforecast/
-Accept: application/json
+### Estado de la API y SQL Server
+GET {{host}}/health
 
-###
+### Crear el primer administrador (solo funciona si no existen cuentas)
+POST {{host}}/api/v1/setup
+Content-Type: application/json
+
+{
+  "username": "admin",
+  "email": "admin@snic.local",
+  "displayName": "Administrador SNIC",
+  "password": "reemplace_con_una_clave_segura"
+}
+
+### Iniciar sesión
+POST {{host}}/api/v1/auth/login
+Content-Type: application/json
+
+{
+  "username": "admin",
+  "password": "reemplace_con_una_clave_segura"
+}
+
+### Cuenta asociada al token
+GET {{host}}/api/v1/auth/me
+Authorization: Bearer {{token}}
+
+### Consultar instituciones (administrador)
+GET {{host}}/api/v1/institutions
+Authorization: Bearer {{token}}
+
+### Consultar cuentas (administrador)
+GET {{host}}/api/v1/accounts
+Authorization: Bearer {{token}}

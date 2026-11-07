@@ -114,7 +114,12 @@ namespace Snic.Api.Infrastructure.Migrations
                     b.HasIndex("Operation", "Result", "OccurredAt")
                         .HasDatabaseName("IX_audit_logs_operation_result_date");
 
-                    b.ToTable("audit_logs", (string)null);
+                    b.ToTable("audit_logs", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_audit_logs_new_values_json", "[new_values] IS NULL OR ISJSON([new_values]) = 1");
+
+                            t.HasCheckConstraint("CK_audit_logs_old_values_json", "[old_values] IS NULL OR ISJSON([old_values]) = 1");
+                        });
                 });
 
             modelBuilder.Entity("Snic.Api.Domain.CreditEventType", b =>
@@ -153,7 +158,8 @@ namespace Snic.Api.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("Code")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasDatabaseName("UQ_credit_event_types_code");
 
                     b.ToTable("credit_event_types", (string)null);
 
@@ -162,6 +168,7 @@ namespace Snic.Api.Infrastructure.Migrations
                         {
                             Id = (short)1,
                             Code = "PRODUCT_OPENED",
+                            Description = "Registra la apertura del producto crediticio.",
                             IsActive = true,
                             Name = "Producto abierto"
                         },
@@ -169,6 +176,7 @@ namespace Snic.Api.Infrastructure.Migrations
                         {
                             Id = (short)2,
                             Code = "PERIOD_REPORTED",
+                            Description = "Registra la información consolidada de un período.",
                             IsActive = true,
                             Name = "Período reportado"
                         },
@@ -176,6 +184,7 @@ namespace Snic.Api.Infrastructure.Migrations
                         {
                             Id = (short)3,
                             Code = "BALANCE_UPDATED",
+                            Description = "Registra una modificación del saldo vigente.",
                             IsActive = true,
                             Name = "Saldo actualizado"
                         },
@@ -183,6 +192,7 @@ namespace Snic.Api.Infrastructure.Migrations
                         {
                             Id = (short)4,
                             Code = "PAYMENT_REPORTED",
+                            Description = "Registra un pago informado por la institución.",
                             IsActive = true,
                             Name = "Pago reportado"
                         },
@@ -190,13 +200,15 @@ namespace Snic.Api.Infrastructure.Migrations
                         {
                             Id = (short)5,
                             Code = "DELINQUENCY_REPORTED",
+                            Description = "Registra morosidad o días de atraso.",
                             IsActive = true,
-                            Name = "Mora reportada"
+                            Name = "Atraso reportado"
                         },
                         new
                         {
                             Id = (short)6,
                             Code = "PRODUCT_CLOSED",
+                            Description = "Registra el cierre del producto.",
                             IsActive = true,
                             Name = "Producto cerrado"
                         },
@@ -204,6 +216,7 @@ namespace Snic.Api.Infrastructure.Migrations
                         {
                             Id = (short)7,
                             Code = "PRODUCT_CANCELLED",
+                            Description = "Registra la cancelación del producto.",
                             IsActive = true,
                             Name = "Producto cancelado"
                         });
@@ -312,14 +325,6 @@ namespace Snic.Api.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("CreditEventTypeId");
-
-                    b.HasIndex("PaymentStatusId");
-
-                    b.HasIndex("ProductStatusAfterId");
-
-                    b.HasIndex("SupersedesEventId");
-
                     b.HasIndex("CreditProductId", "EventDate")
                         .HasDatabaseName("IX_credit_history_product_date");
 
@@ -332,7 +337,18 @@ namespace Snic.Api.Infrastructure.Migrations
                     b.HasIndex("ReportedByAccountId", "ReportedAt")
                         .HasDatabaseName("IX_credit_history_reporter_date");
 
-                    b.ToTable("credit_history_events", (string)null);
+                    b.ToTable("credit_history_events", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_credit_history_amounts", "([amount_due] IS NULL OR [amount_due] >= 0) AND ([amount_paid] IS NULL OR [amount_paid] >= 0) AND ([balance_after] IS NULL OR [balance_after] >= 0)");
+
+                            t.HasCheckConstraint("CK_credit_history_days_past_due", "[days_past_due] >= 0");
+
+                            t.HasCheckConstraint("CK_credit_history_deactivation", "([is_active] = 1 AND [deactivated_at] IS NULL) OR ([is_active] = 0 AND [deactivated_at] IS NOT NULL)");
+
+                            t.HasCheckConstraint("CK_credit_history_not_self_superseded", "[supersedes_event_id] IS NULL OR [supersedes_event_id] <> [id]");
+
+                            t.HasCheckConstraint("CK_credit_history_period", "[period_start] IS NULL OR [period_end] IS NULL OR [period_end] >= [period_start]");
+                        });
                 });
 
             modelBuilder.Entity("Snic.Api.Domain.CreditProduct", b =>
@@ -434,12 +450,6 @@ namespace Snic.Api.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("CreatedByAccountId");
-
-                    b.HasIndex("ProductStatusId");
-
-                    b.HasIndex("ProductTypeId");
-
                     b.HasIndex("InstitutionId", "ExternalProductIdentifier")
                         .IsUnique()
                         .HasDatabaseName("UQ_credit_products_institution_external_id");
@@ -453,7 +463,18 @@ namespace Snic.Api.Infrastructure.Migrations
                     b.HasIndex("PersonId", "InstitutionId", "ProductTypeId")
                         .HasDatabaseName("IX_credit_products_person_institution_type");
 
-                    b.ToTable("credit_products", (string)null);
+                    b.ToTable("credit_products", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_credit_products_amounts", "[approved_amount] >= 0 AND [current_balance] >= 0");
+
+                            t.HasCheckConstraint("CK_credit_products_currency", "LEN([currency_code]) = 3 AND [currency_code] NOT LIKE '%[^A-Z]%'");
+
+                            t.HasCheckConstraint("CK_credit_products_dates", "[closing_date] IS NULL OR [closing_date] >= [opening_date]");
+
+                            t.HasCheckConstraint("CK_credit_products_days_past_due", "[latest_days_past_due] >= 0");
+
+                            t.HasCheckConstraint("CK_credit_products_deactivation", "([is_active] = 1 AND [deactivated_at] IS NULL) OR ([is_active] = 0 AND [deactivated_at] IS NOT NULL)");
+                        });
                 });
 
             modelBuilder.Entity("Snic.Api.Domain.Institution", b =>
@@ -522,15 +543,20 @@ namespace Snic.Api.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("Code")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasDatabaseName("UQ_institutions_code");
 
                     b.HasIndex("Rnc")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasDatabaseName("UQ_institutions_rnc");
 
                     b.HasIndex("InstitutionTypeId", "IsActive")
                         .HasDatabaseName("IX_institutions_type_active");
 
-                    b.ToTable("institutions", (string)null);
+                    b.ToTable("institutions", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_institutions_deactivation", "([is_active] = 1 AND [deactivated_at] IS NULL) OR ([is_active] = 0 AND [deactivated_at] IS NOT NULL)");
+                        });
                 });
 
             modelBuilder.Entity("Snic.Api.Domain.InstitutionType", b =>
@@ -564,7 +590,8 @@ namespace Snic.Api.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("Code")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasDatabaseName("UQ_institution_types_code");
 
                     b.ToTable("institution_types", (string)null);
 
@@ -586,14 +613,14 @@ namespace Snic.Api.Infrastructure.Migrations
                         new
                         {
                             Id = (short)3,
-                            Code = "FINANCIAL_ENTITY",
+                            Code = "FINANCIAL",
                             IsActive = true,
                             Name = "Entidad financiera"
                         },
                         new
                         {
                             Id = (short)4,
-                            Code = "COMMERCIAL_COMPANY",
+                            Code = "COMMERCIAL",
                             IsActive = true,
                             Name = "Empresa comercial"
                         });
@@ -610,9 +637,9 @@ namespace Snic.Api.Infrastructure.Migrations
 
                     b.Property<string>("Code")
                         .IsRequired()
-                        .HasMaxLength(40)
+                        .HasMaxLength(30)
                         .IsUnicode(false)
-                        .HasColumnType("varchar(40)")
+                        .HasColumnType("varchar(30)")
                         .HasColumnName("code");
 
                     b.Property<bool>("IsActive")
@@ -623,14 +650,15 @@ namespace Snic.Api.Infrastructure.Migrations
 
                     b.Property<string>("Name")
                         .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)")
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)")
                         .HasColumnName("name");
 
                     b.HasKey("Id");
 
                     b.HasIndex("Code")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasDatabaseName("UQ_payment_statuses_code");
 
                     b.ToTable("payment_statuses", (string)null);
 
@@ -647,7 +675,7 @@ namespace Snic.Api.Infrastructure.Migrations
                             Id = (short)2,
                             Code = "PARTIAL",
                             IsActive = true,
-                            Name = "Parcial"
+                            Name = "Pago parcial"
                         },
                         new
                         {
@@ -661,7 +689,7 @@ namespace Snic.Api.Infrastructure.Migrations
                             Id = (short)4,
                             Code = "PAID_LATE",
                             IsActive = true,
-                            Name = "Pagado tarde"
+                            Name = "Pagado con atraso"
                         },
                         new
                         {
@@ -743,18 +771,24 @@ namespace Snic.Api.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("CreatedByAccountId");
-
                     b.HasIndex("IsActive")
                         .HasDatabaseName("IX_persons_active");
 
                     b.HasIndex("NationalId")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasDatabaseName("UQ_persons_national_id");
 
                     b.HasIndex("FirstSurname", "FirstName")
                         .HasDatabaseName("IX_persons_name");
 
-                    b.ToTable("persons", (string)null);
+                    b.ToTable("persons", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_persons_birth_date", "[birth_date] IS NULL OR [birth_date] <= CONVERT(date, SYSDATETIME())");
+
+                            t.HasCheckConstraint("CK_persons_deactivation", "([is_active] = 1 AND [deactivated_at] IS NULL) OR ([is_active] = 0 AND [deactivated_at] IS NOT NULL)");
+
+                            t.HasCheckConstraint("CK_persons_national_id", "LEN([national_id]) = 11 AND [national_id] NOT LIKE '%[^0-9]%'");
+                        });
                 });
 
             modelBuilder.Entity("Snic.Api.Domain.ProductStatus", b =>
@@ -768,9 +802,9 @@ namespace Snic.Api.Infrastructure.Migrations
 
                     b.Property<string>("Code")
                         .IsRequired()
-                        .HasMaxLength(40)
+                        .HasMaxLength(30)
                         .IsUnicode(false)
-                        .HasColumnType("varchar(40)")
+                        .HasColumnType("varchar(30)")
                         .HasColumnName("code");
 
                     b.Property<bool>("IsActive")
@@ -781,14 +815,15 @@ namespace Snic.Api.Infrastructure.Migrations
 
                     b.Property<string>("Name")
                         .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)")
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)")
                         .HasColumnName("name");
 
                     b.HasKey("Id");
 
                     b.HasIndex("Code")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasDatabaseName("UQ_product_statuses_code");
 
                     b.ToTable("product_statuses", (string)null);
 
@@ -827,9 +862,9 @@ namespace Snic.Api.Infrastructure.Migrations
 
                     b.Property<string>("Code")
                         .IsRequired()
-                        .HasMaxLength(40)
+                        .HasMaxLength(30)
                         .IsUnicode(false)
-                        .HasColumnType("varchar(40)")
+                        .HasColumnType("varchar(30)")
                         .HasColumnName("code");
 
                     b.Property<bool>("IsActive")
@@ -840,14 +875,15 @@ namespace Snic.Api.Infrastructure.Migrations
 
                     b.Property<string>("Name")
                         .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)")
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)")
                         .HasColumnName("name");
 
                     b.HasKey("Id");
 
                     b.HasIndex("Code")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasDatabaseName("UQ_product_types_code");
 
                     b.ToTable("product_types", (string)null);
 
@@ -911,7 +947,8 @@ namespace Snic.Api.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("Code")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasDatabaseName("UQ_roles_code");
 
                     b.ToTable("roles", (string)null);
 
@@ -920,6 +957,7 @@ namespace Snic.Api.Infrastructure.Migrations
                         {
                             Id = (short)1,
                             Code = "ADMINISTRATOR",
+                            Description = "Administra instituciones, cuentas, catálogos y supervisión general.",
                             IsActive = true,
                             Name = "Administrador"
                         },
@@ -927,13 +965,15 @@ namespace Snic.Api.Infrastructure.Migrations
                         {
                             Id = (short)2,
                             Code = "CONSUMER",
+                            Description = "Consulta información crediticia autorizada.",
                             IsActive = true,
-                            Name = "Consumidor"
+                            Name = "Entidad consumidora"
                         },
                         new
                         {
                             Id = (short)3,
                             Code = "DATA_ENTRY",
+                            Description = "Registra y actualiza datos pertenecientes a su institución.",
                             IsActive = true,
                             Name = "Registrador"
                         });
@@ -982,10 +1022,18 @@ namespace Snic.Api.Infrastructure.Migrations
 
                     b.HasIndex("MinDaysPastDue", "MaxDaysPastDue")
                         .IsUnique()
-                        .HasDatabaseName("UQ_score_rules_range")
-                        .HasFilter("[max_days_past_due] IS NOT NULL");
+                        .HasDatabaseName("UQ_score_rules_range");
 
-                    b.ToTable("score_rules", (string)null);
+                    b.ToTable("score_rules", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_score_rules_days", "[min_days_past_due] >= 0 AND ([max_days_past_due] IS NULL OR [max_days_past_due] >= [min_days_past_due])");
+
+                            t.HasCheckConstraint("CK_score_rules_default_percentage", "[estimated_default_percentage] BETWEEN 0 AND 100");
+
+                            t.HasCheckConstraint("CK_score_rules_risk_level", "[risk_level] IN ('LOW', 'MEDIUM', 'HIGH')");
+
+                            t.HasCheckConstraint("CK_score_rules_score", "[score] BETWEEN 0 AND 100");
+                        });
 
                     b.HasData(
                         new
@@ -1122,10 +1170,12 @@ namespace Snic.Api.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("Email")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasDatabaseName("UQ_user_accounts_email");
 
                     b.HasIndex("Username")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasDatabaseName("UQ_user_accounts_username");
 
                     b.HasIndex("InstitutionId", "IsActive")
                         .HasDatabaseName("IX_user_accounts_institution_active");
@@ -1135,7 +1185,9 @@ namespace Snic.Api.Infrastructure.Migrations
 
                     b.ToTable("user_accounts", null, t =>
                         {
-                            t.HasCheckConstraint("CK_user_accounts_role_institution", "([role_id] = 1 AND [institution_id] IS NULL) OR ([role_id] <> 1 AND [institution_id] IS NOT NULL)");
+                            t.HasCheckConstraint("CK_user_accounts_deactivation", "([is_active] = 1 AND [deactivated_at] IS NULL) OR ([is_active] = 0 AND [deactivated_at] IS NOT NULL)");
+
+                            t.HasCheckConstraint("CK_user_accounts_failed_attempts", "[failed_login_attempts] >= 0");
                         });
                 });
 

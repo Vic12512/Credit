@@ -7,8 +7,9 @@ public sealed class SnicDbContextFactory : IDesignTimeDbContextFactory<SnicDbCon
 {
     public SnicDbContext CreateDbContext(string[] args)
     {
+        EnvFile.LoadForApiProject();
         var connectionString = Environment.GetEnvironmentVariable("ConnectionStrings__SnicDb")
-            ?? "Server=localhost,1433;Database=SnicDb;User Id=sa;Password=DesignTimeOnly!123;TrustServerCertificate=True";
+            ?? "Server=localhost,1433;Database=SNICDB;User Id=sa;Password=DesignTimeOnly!123;TrustServerCertificate=True";
         var options = new DbContextOptionsBuilder<SnicDbContext>().UseSqlServer(connectionString).Options;
         return new SnicDbContext(options);
     }

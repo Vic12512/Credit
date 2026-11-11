@@ -31,6 +31,7 @@ builder.Services.AddSwaggerGen(options =>
         BearerFormat = "JWT",
         Description = "Ingrese el token JWT obtenido en /api/v1/auth/login."
     });
+    options.OperationFilter<AuthorizeOperationFilter>();
 });
 builder.Services.AddDbContext<SnicDbContext>(options => options.UseSqlServer(connectionString));
 builder.Services.AddScoped<IUserAccountRepository, UserAccountRepository>();

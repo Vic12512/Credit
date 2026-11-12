@@ -24,6 +24,7 @@ builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 builder.Services.AddSwaggerGen(options =>
 {
+    options.OperationFilter<SwaggerPermissionsOperationFilter>();
     options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
         Type = SecuritySchemeType.Http,
@@ -31,16 +32,25 @@ builder.Services.AddSwaggerGen(options =>
         BearerFormat = "JWT",
         Description = "Ingrese el token JWT obtenido en /api/v1/auth/login."
     });
+    options.AddSecurityRequirement(document => new OpenApiSecurityRequirement
+    {
+        [new OpenApiSecuritySchemeReference("Bearer", document)] = []
+    });
 });
 builder.Services.AddDbContext<SnicDbContext>(options => options.UseSqlServer(connectionString));
 builder.Services.AddScoped<IUserAccountRepository, UserAccountRepository>();
 builder.Services.AddScoped<IInstitutionRepository, InstitutionRepository>();
+builder.Services.AddScoped<IPersonRepository, PersonRepository>();
+builder.Services.AddScoped<ICreditProductRepository, CreditProductRepository>();
 builder.Services.AddScoped<IPasswordService, Pbkdf2PasswordService>();
 builder.Services.AddScoped<ITokenService, JwtTokenService>();
 builder.Services.AddScoped<IAuthenticationService, AuthenticationService>();
 builder.Services.AddScoped<DevelopmentAdminBootstrapper>();
 builder.Services.AddScoped<IInstitutionService, InstitutionService>();
 builder.Services.AddScoped<IAccountService, AccountService>();
+builder.Services.AddScoped<IAuditService, AuditService>();
+builder.Services.AddScoped<IPersonService, PersonService>();
+builder.Services.AddScoped<ICreditProductService, CreditProductService>();
 builder.Services.AddCors(options => options.AddPolicy("Frontend", policy => policy
     .WithOrigins(builder.Configuration["FrontendUrl"] ?? "http://localhost:5173")
     .AllowAnyHeader().AllowAnyMethod()));

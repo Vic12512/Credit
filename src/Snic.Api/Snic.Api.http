@@ -28,10 +28,47 @@ Content-Type: application/json
 GET {{host}}/api/v1/auth/me
 Authorization: Bearer {{token}}
 
-### Consultar instituciones (administrador)
+### Consultar instituciones (cualquiera de los tres roles)
 GET {{host}}/api/v1/institutions
 Authorization: Bearer {{token}}
 
 ### Consultar cuentas (administrador)
 GET {{host}}/api/v1/accounts
+Authorization: Bearer {{token}}
+
+### Registrar una persona (DATA_ENTRY)
+POST {{host}}/api/v1/persons
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "nationalId": "00112345678",
+  "firstName": "Ana",
+  "middleName": "Maria Elena",
+  "firstSurname": "Perez",
+  "secondSurname": "Gomez",
+  "birthDate": "1992-04-18"
+}
+
+### Registrar un producto crediticio (DATA_ENTRY, institución de su cuenta)
+POST {{host}}/api/v1/credit-products
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "personId": 1,
+  "productTypeCode": "LOAN",
+  "productStatusCode": "OPEN",
+  "externalProductIdentifier": "PREST-DEMO-001",
+  "approvedAmount": 250000,
+  "currentBalance": 180000,
+  "currencyCode": "DOP",
+  "openingDate": "2024-01-15",
+  "closingDate": null,
+  "latestReportDate": "2026-11-01",
+  "latestDaysPastDue": 8
+}
+
+### Consulta consolidada por cédula (cualquiera de los tres roles)
+GET {{host}}/api/v1/credit-reports/00112345678
 Authorization: Bearer {{token}}

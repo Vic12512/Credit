@@ -6,7 +6,7 @@ using Snic.Api.Services;
 namespace Snic.Api.Controllers;
 
 [ApiController]
-[Authorize(Roles = "ADMINISTRATOR")]
+[Authorize(Roles = "ADMINISTRATOR,CONSUMER,DATA_ENTRY")]
 [Route("api/v1/institutions")]
 public sealed class InstitutionsController(IInstitutionService institutions) : ControllerBase
 {
@@ -21,6 +21,7 @@ public sealed class InstitutionsController(IInstitutionService institutions) : C
     }
 
     [HttpPost]
+    [Authorize(Roles = "ADMINISTRATOR")]
     public async Task<IActionResult> Create(CreateInstitutionRequest request, CancellationToken cancellationToken)
     {
         var result = await institutions.CreateAsync(request, cancellationToken);

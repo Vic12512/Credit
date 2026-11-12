@@ -67,6 +67,10 @@ La primera cuenta se crea una sola vez con `POST /api/v1/setup`. Cuando ya exist
 
 Las rutas administrativas son neutrales (`/api/v1/institutions` y `/api/v1/accounts`): el rol `ADMINISTRATOR` se comprueba en el servidor y no forma parte de la URL. Consulta ejemplos en `src/Snic.Api/Snic.Api.http` y el detalle técnico en `docs/Documento_Tecnico.md`.
 
+La API incluye además registro y corrección de personas y productos crediticios, auditoría de correcciones y consulta consolidada por cédula. El manual completo está en `docs/Manual_Uso_API.md`.
+
+Los tres roles pueden consultar instituciones, personas, productos y reportes. `ADMINISTRATOR` administra instituciones y cuentas y corrige datos personales. `DATA_ENTRY` registra personas y crea o corrige exclusivamente productos de su institución; esta se obtiene desde la cuenta autenticada. `CONSUMER` tiene acceso de consulta. Swagger describe los roles permitidos en cada operación.
+
 ## Migraciones posteriores
 
 ```powershell

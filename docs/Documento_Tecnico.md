@@ -1,52 +1,64 @@
-# Documento técnico — SNIC
+# Documento técnico — API SNIC
 
-## Alcance del entregable
+## 1. Información general de la API
 
-Este incremento implementa el mínimo funcional de RF-01 (autenticación con JWT) y RF-02 (control de permisos), además de la administración básica de instituciones y cuentas necesaria para demostrar ambos requisitos.
+La API del Sistema Nacional de Información Crediticia (SNIC) permite registrar personas y productos crediticios y consultar información consolidada por cédula. También administra instituciones y cuentas de usuario. Su finalidad es académica: recibe información crediticia preparada y permite corregirla; no ejecuta pagos ni movimientos de dinero.
 
-## Estructura
+    | Característica | Descripción |
+    |---|---|
+    | Nombre | API SNIC |
+    | Versión del contrato | v1 |
+    | Ruta base de negocio | `/api/v1` |
+    | Tecnología | ASP.NET Core sobre .NET 10 |
+    | Persistencia | SQL Server mediante Entity Framework Core |
+    | Comunicación | HTTP/HTTPS; solicitudes y respuestas de negocio en JSON |
+    | Autenticación | JWT Bearer con vencimiento |
+    | Autorización | Roles y comprobación del estado de la cuenta en el servidor |
+    | Documentación interactiva | Swagger UI en `/swagger`, disponible en `Development` |
+    | Contrato de Swagger | `/swagger/v1/swagger.json`, disponible en `Development` |
+    | URL local de ejemplo | `http://localhost:5041`, según el perfil de ejecución |
 
-- `src/Snic.Api/Controllers`: endpoints HTTP.
-- `src/Snic.Api/Contracts`: solicitudes y respuestas de la API.
-- `src/Snic.Api/Domain`: modelos del dominio.
-- `src/Snic.Api/Infrastructure`: DbContext, configuración de entidades, carga de entorno y migraciones.
-- `src/Snic.Api/Repositories`: acceso a cuentas e instituciones.
-- `src/Snic.Api/Services`: reglas de negocio, contraseñas y JWT.
-- `src/snic-web`: cliente React/Vite.
+Las funciones disponibles incluyen autenticación, administración de accesos, registro y corrección de personas, registro y corrección de tarjetas, préstamos e hipotecas y consulta consolidada. Las correcciones de personas y productos guardan valores anteriores y nuevos en auditoría dentro de la misma transacción que la actualización.
 
-## Configuración y base de datos
+La consulta consolidada devuelve la identificación de la persona, la institución acreedora, tipo y estado de cada producto, montos, saldos, fechas y días de atraso. Incluye cantidad de productos, monto aprobado total, saldo pendiente total y el indicador `hasCreditHistory`.
 
-La conexión se define localmente mediante `ConnectionStrings__SnicDb` en `src/Snic.Api/.env`. `EnvFile` carga ese archivo antes de construir la aplicación y no sobrescribe variables ya definidas por el sistema. La migración `20261106001802_InitialCreate` crea las 13 tablas de negocio sincronizadas con `SNICDB_Creacion_Completa.sql`; Entity Framework agrega `__EFMigrationsHistory` para controlar migraciones.
+El sistema define tres roles de usuario:
 
-`SnicDbContext` expone los modelos y `EntityConfigurations` define claves, relaciones, índices, restricciones y conversiones. Las dependencias se registran con inyección de dependencias en `Program.cs`.
+- `ADMINISTRATOR`: administrador del sistema.
+- `CONSUMER`: usuario consumidor de información crediticia.
+- `DATA_ENTRY`: usuario institucional destinado al registro de información.
 
-## Seguridad
+Las cuentas institucionales se asocian a una institución. Una cuenta de usuario representa un acceso al sistema, no una cuenta bancaria.
 
-- `POST /api/v1/setup`: crea exclusivamente la primera cuenta con rol `ADMINISTRATOR`; después responde `409 Conflict` permanentemente.
-- `POST /api/v1/auth/login`: valida usuario, contraseña PBKDF2, estado y bloqueo; entrega un JWT con vencimiento.
-- `GET /api/v1/auth/me`: devuelve la cuenta autenticada.
-- Cada solicitud autenticada vuelve a consultar la cuenta. Una desactivación o bloqueo invalida incluso un JWT previamente emitido.
-- Las operaciones de instituciones y cuentas requieren el rol `ADMINISTRATOR`.
-- Cinco intentos incorrectos bloquean temporalmente la cuenta durante 15 minutos.
-- En `Development`, un inicializador idempotente puede crear la primera cuenta administradora usando únicamente `BootstrapAdmin__Username` y `BootstrapAdmin__Password`. No se ejecuta en otros ambientes ni modifica bases que ya tengan cuentas.
+Los endpoints protegidos reciben el encabezado `Authorization: Bearer <token>`. El token se obtiene con `POST /api/v1/auth/login`. La API comprueba que la cuenta siga activa y no esté bloqueada en cada solicitud autenticada.
 
-## Endpoints administrativos
+Las respuestas principales son `200 OK` (consulta o actualización), `201 Created` (registro creado), `400 Bad Request` (datos inválidos), `401 Unauthorized` (acceso no autenticado o inválido), `403 Forbidden` (permisos insuficientes), `404 Not Found` (recurso inexistente) y `409 Conflict` (duplicados o sistema ya inicializado).
 
-- `GET|POST /api/v1/institutions`
-- `GET /api/v1/institutions/{id}`
-- `GET|POST /api/v1/accounts`
-- `GET /api/v1/accounts/{id}`
-- `PATCH /api/v1/accounts/{id}/status`
+## 2. Listado de endpoints y permisos
 
-Las rutas son neutrales: el rol no forma parte de la URL; la autorización se aplica mediante JWT y políticas del servidor.
+La tabla describe los permisos actualmente implementados en los controladores. Los roles corresponden a cuentas activas con un JWT válido, salvo las rutas públicas indicadas.
 
-## Ejecución y comprobación
+| Método | Endpoint | Operación | Roles o acceso permitido |
+|---|---|---|---|
+| POST | `/api/v1/setup` | Crear el primer administrador | Público; solo funciona si no existe ninguna cuenta |
+| POST | `/api/v1/auth/login` | Validar credenciales y emitir JWT | Público; requiere credenciales válidas de una cuenta activa |
+| GET | `/api/v1/auth/me` | Consultar la propia cuenta autenticada | ADMINISTRATOR, CONSUMER, DATA_ENTRY |
+| POST | `/api/v1/institutions` | Registrar una institución | ADMINISTRATOR |
+| GET | `/api/v1/institutions` | Listar instituciones | ADMINISTRATOR |
+| GET | `/api/v1/institutions/{id}` | Consultar una institución por ID | ADMINISTRATOR |
+| POST | `/api/v1/accounts` | Crear una cuenta y asignar su rol e institución | ADMINISTRATOR |
+| GET | `/api/v1/accounts` | Listar cuentas de usuario | ADMINISTRATOR |
+| GET | `/api/v1/accounts/{id}` | Consultar una cuenta de usuario por ID | ADMINISTRATOR |
+| PATCH | `/api/v1/accounts/{id}/status` | Activar o desactivar una cuenta | ADMINISTRATOR; no permite desactivar la propia cuenta |
+| POST | `/api/v1/persons` | Registrar una persona con cédula única | ADMINISTRATOR |
+| GET | `/api/v1/persons` | Listar personas | ADMINISTRATOR |
+| GET | `/api/v1/persons/{id}` | Consultar una persona por ID | ADMINISTRATOR |
+| PUT | `/api/v1/persons/{id}` | Corregir datos personales y registrar auditoría | ADMINISTRATOR |
+| POST | `/api/v1/credit-products` | Registrar un producto crediticio | ADMINISTRATOR |
+| GET | `/api/v1/credit-products` | Listar productos crediticios | ADMINISTRATOR |
+| GET | `/api/v1/credit-products/{id}` | Consultar un producto por ID | ADMINISTRATOR |
+| PUT | `/api/v1/credit-products/{id}` | Corregir un producto y registrar auditoría | ADMINISTRATOR |
+| GET | `/api/v1/credit-reports/{nationalId}` | Consultar el reporte consolidado por cédula | ADMINISTRATOR, CONSUMER |
+| GET | `/health` | Comprobar la disponibilidad de la API y la base de datos | Público |
 
-```powershell
-dotnet tool restore
-dotnet restore
-dotnet tool run dotnet-ef database update --project src/Snic.Api
-dotnet run --project src/Snic.Api
-```
-
-En desarrollo, Swagger está disponible en `/swagger`. El botón **Authorize** acepta el token obtenido en el inicio de sesión. La solución se comprueba con `dotnet build Snic.slnx`; el cliente con `npm.cmd run build --prefix src/snic-web`.
+Se documentan 19 operaciones de negocio y una operación de salud. Las rutas de Swagger y del contrato OpenAPI son recursos de documentación, separados de estas operaciones.

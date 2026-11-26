@@ -70,15 +70,40 @@ export type CreditReport = {
     totalOutstandingBalance: number
   }
   products: CreditProduct[]
+  code: 'CREDIT_REPORT_FOUND' | 'NO_CREDIT_HISTORY'
+  message: string
+  indicators: AcademicIndicators
 }
+
+export type CatalogItem = { id: number; code: string; name: string }
+export type ScoreRule = { id: number; minDaysPastDue: number; maxDaysPastDue: number | null; score: number; riskLevel: string; estimatedDefaultPercentage: number; isSimulated: boolean }
+export type AcademicIndicators = {
+  isSimulated: boolean; status: 'SIMULATED' | 'NO_CREDIT_HISTORY'; message: string
+  maximumDaysPastDue: number | null; score: number | null; riskLevel: 'LOW' | 'MEDIUM' | 'HIGH' | null
+  estimatedDefaultPercentage: number | null
+}
+export type AuditEntry = {
+  id: number; occurredAt: string; accountId: number | null; username: string | null
+  institutionId: number | null; personId: number | null; operation: string; entityType: string | null
+  entityId: number | null; result: string; attemptedUsername: string | null
+  oldValues: string | null; newValues: string | null; details: string | null; ipAddress: string | null
+}
+export type PagedResponse<T> = { items: T[]; totalCount: number; page: number; pageSize: number }
+export const riskNames = { LOW: 'Bajo', MEDIUM: 'Medio', HIGH: 'Alto' }
 
 export class ApiError extends Error {
   readonly status: number
+  readonly code: string
+  readonly traceId?: string
+  readonly fieldErrors: Record<string, string[]>
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, code = 'UNKNOWN_ERROR', fieldErrors: Record<string, string[]> = {}, traceId?: string) {
     super(message)
     this.name = 'ApiError'
     this.status = status
+    this.code = code
+    this.fieldErrors = fieldErrors
+    this.traceId = traceId
   }
 }
 
@@ -94,12 +119,16 @@ export async function apiRequest<T>(
   let response: Response
   try {
     response = await fetch(`${API_BASE_URL}${path}`, { ...options, headers })
-  } catch {
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') throw error
     throw new ApiError(`No se pudo conectar con la API (${API_BASE_URL}). Verifica que el backend esté ejecutándose y que CORS esté configurado.`, 0)
   }
 
   if (!response.ok) {
     let message = `La solicitud falló (${response.status}).`
+    let code = 'UNKNOWN_ERROR'
+    let traceId: string | undefined
+    const fieldErrors: Record<string, string[]> = {}
     try {
       const body: unknown = await response.json()
       if (body && typeof body === 'object' && 'message' in body && typeof body.message === 'string') {
@@ -107,10 +136,27 @@ export async function apiRequest<T>(
       } else if (body && typeof body === 'object' && 'title' in body && typeof body.title === 'string') {
         message = body.title
       }
+      if (body && typeof body === 'object') {
+        if ('code' in body && typeof body.code === 'string') code = body.code
+        if ('traceId' in body && typeof body.traceId === 'string') traceId = body.traceId
+        if ('errors' in body && body.errors && typeof body.errors === 'object') {
+          for (const [key, value] of Object.entries(body.errors)) {
+            if (Array.isArray(value)) fieldErrors[key] = value.filter((item): item is string => typeof item === 'string')
+          }
+        }
+      }
     } catch {
       // Some responses, such as 204, have no JSON body.
     }
-    throw new ApiError(message, response.status)
+    const messages: Record<string, string> = {
+      PERSON_NOT_FOUND: 'No se encontró una persona registrada con esa cédula.',
+      TOKEN_EXPIRED: 'Tu sesión venció. Inicia sesión nuevamente.',
+      INVALID_TOKEN: 'La sesión no es válida. Inicia sesión nuevamente.',
+      ACCOUNT_UNAVAILABLE: 'Tu cuenta ya no tiene acceso. Contacta al administrador.',
+      INSUFFICIENT_PERMISSIONS: 'No tienes permiso para esta operación o el producto pertenece a otra institución.',
+    }
+    const details = [...new Set(Object.values(fieldErrors).flat())]
+    throw new ApiError([messages[code] ?? message, ...details].join('\n'), response.status, code, fieldErrors, traceId)
   }
 
   if (response.status === 204) return undefined as T
@@ -140,4 +186,11 @@ export function formatMoney(value: number, currency = 'DOP'): string {
 export function formatDate(value: string | null): string {
   if (!value) return '—'
   return new Intl.DateTimeFormat('es-DO', { dateStyle: 'medium' }).format(new Date(`${value.slice(0, 10)}T12:00:00`))
+}
+
+export function formatDateTime(value: string | null): string {
+  if (!value) return '—'
+  const date = new Date(/(?:Z|[+-]\d\d:\d\d)$/i.test(value) ? value : `${value}Z`)
+  if (Number.isNaN(date.getTime())) return '—'
+  return new Intl.DateTimeFormat('es-DO', { dateStyle: 'medium', timeStyle: 'short' }).format(date)
 }

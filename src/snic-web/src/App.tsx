@@ -1,8 +1,12 @@
-import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { DataTable, Field, Modal, Notice, PageHeading, StatCard, StatusPill } from './ui'
+import { AuditPage } from './AuditPage'
+import { Indicators } from './Indicators'
 import {
   apiRequest,
   ApiError,
   formatDate,
+  formatDateTime,
   formatMoney,
   personName,
   roleNames,
@@ -11,12 +15,14 @@ import {
   type CreditReport,
   type Institution,
   type Person,
+  type CatalogItem,
+  type ScoreRule,
 } from './api'
 import './App.css'
 
-type Session = { token: string; account: Account }
-type Page = 'report' | 'persons' | 'products' | 'institutions' | 'accounts'
-type PageProps = { token: string; account: Account; onUnauthorized: () => void }
+type Session = { token: string; account: Account; expiresAtUtc: string }
+type Page = 'report' | 'persons' | 'products' | 'institutions' | 'accounts' | 'audit'
+type PageProps = { token: string; account: Account; onUnauthorized: (error?: ApiError) => void }
 type StoredSession = { token: string; expiresAtUtc: string }
 
 const SESSION_KEY = 'snic.session'
@@ -25,7 +31,7 @@ function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Ocurrió un error inesperado.'
 }
 
-function useResource<T>(path: string, token: string, onUnauthorized: () => void) {
+function useResource<T>(path: string, token: string, onUnauthorized: (error?: ApiError) => void, enabled = true) {
   const [items, setItems] = useState<T[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -34,6 +40,7 @@ function useResource<T>(path: string, token: string, onUnauthorized: () => void)
   const reload = useCallback(() => setRevision((value) => value + 1), [])
 
   useEffect(() => {
+    if (!enabled) { setLoading(false); return }
     let active = true
     setLoading(true)
     setError('')
@@ -44,7 +51,7 @@ function useResource<T>(path: string, token: string, onUnauthorized: () => void)
       .catch((reason: unknown) => {
         if (!active) return
         setError(getErrorMessage(reason))
-        if (reason instanceof ApiError && reason.status === 401) onUnauthorized()
+        if (reason instanceof ApiError && reason.status === 401) onUnauthorized(reason)
       })
       .finally(() => {
         if (active) setLoading(false)
@@ -52,7 +59,7 @@ function useResource<T>(path: string, token: string, onUnauthorized: () => void)
     return () => {
       active = false
     }
-  }, [path, token, revision, onUnauthorized])
+  }, [path, token, revision, onUnauthorized, enabled])
 
   return { items, loading, error, reload }
 }
@@ -69,9 +76,9 @@ function App() {
     setPage('report')
     setAuthError('')
   }, [])
-  const handleUnauthorized = useCallback(() => {
+  const handleUnauthorized = useCallback((error?: ApiError) => {
     clearSession()
-    setAuthError('Tu sesión expiró o ya no está autorizada. Inicia sesión nuevamente.')
+    setAuthError(error?.message ?? 'Tu sesión expiró o ya no está autorizada. Inicia sesión nuevamente.')
   }, [clearSession])
 
   useEffect(() => {
@@ -91,7 +98,7 @@ function App() {
       return
     }
 
-    if (new Date(parsed.expiresAtUtc) <= new Date()) {
+    if (!parsed || typeof parsed !== 'object' || typeof parsed.token !== 'string' || !parsed.token || !Number.isFinite(Date.parse(parsed.expiresAtUtc)) || new Date(parsed.expiresAtUtc) <= new Date()) {
       localStorage.removeItem(SESSION_KEY)
       setCheckingSession(false)
       return
@@ -99,7 +106,7 @@ function App() {
 
     apiRequest<Account>('/auth/me', parsed.token)
       .then((account) => {
-        if (active) setSession({ token: parsed.token, account })
+        if (active) setSession({ token: parsed.token, account, expiresAtUtc: parsed.expiresAtUtc })
       })
       .catch((error: unknown) => {
         if (!active) return
@@ -119,6 +126,12 @@ function App() {
     }
   }, [])
 
+  useEffect(() => {
+    if (!session) return
+    const timer = window.setTimeout(handleUnauthorized, Math.max(0, Date.parse(session.expiresAtUtc) - Date.now()))
+    return () => window.clearTimeout(timer)
+  }, [session, handleUnauthorized])
+
   async function signIn(username: string, password: string) {
     setAuthError('')
     try {
@@ -131,7 +144,7 @@ function App() {
         token: result.accessToken,
         expiresAtUtc: result.expiresAtUtc,
       }))
-      setSession({ token: result.accessToken, account: result.account })
+      setSession({ token: result.accessToken, account: result.account, expiresAtUtc: result.expiresAtUtc })
     } catch (error) {
       setAuthError(getErrorMessage(error))
       throw error
@@ -151,10 +164,11 @@ function App() {
     { id: 'report', label: 'Consulta crediticia', icon: '⌕' },
     { id: 'persons', label: 'Personas', icon: '◉' },
     { id: 'products', label: 'Productos', icon: '▤' },
+    { id: 'institutions', label: 'Instituciones', icon: '⌂' },
     ...(account.roleCode === 'ADMINISTRATOR'
       ? [
-          { id: 'institutions' as Page, label: 'Instituciones', icon: '⌂' },
           { id: 'accounts' as Page, label: 'Cuentas', icon: '♙' },
+          { id: 'audit' as Page, label: 'Auditoría', icon: '▦' },
         ]
       : []),
   ]
@@ -172,6 +186,7 @@ function App() {
             <button
               className={`nav-item ${page === item.id ? 'selected' : ''}`}
               key={item.id}
+              aria-current={page === item.id ? 'page' : undefined}
               onClick={() => setPage(item.id)}
             >
               <span className="nav-icon" aria-hidden="true">{item.icon}</span>
@@ -200,8 +215,9 @@ function App() {
           {page === 'report' && <ReportPage token={token} account={account} onUnauthorized={handleUnauthorized} />}
           {page === 'persons' && <PeoplePage token={token} account={account} onUnauthorized={handleUnauthorized} />}
           {page === 'products' && <ProductsPage token={token} account={account} onUnauthorized={handleUnauthorized} />}
-          {page === 'institutions' && account.roleCode === 'ADMINISTRATOR' && <InstitutionsPage token={token} account={account} onUnauthorized={handleUnauthorized} />}
+          {page === 'institutions' && <InstitutionsPage token={token} account={account} onUnauthorized={handleUnauthorized} />}
           {page === 'accounts' && account.roleCode === 'ADMINISTRATOR' && <AccountsPage token={token} account={account} onUnauthorized={handleUnauthorized} />}
+          {page === 'audit' && account.roleCode === 'ADMINISTRATOR' && <AuditPage token={token} onUnauthorized={handleUnauthorized} />}
         </div>
       </main>
     </div>
@@ -261,6 +277,7 @@ function LoginScreen({ onSignIn, error }: { onSignIn: (username: string, passwor
 }
 
 function ReportPage({ token, onUnauthorized }: PageProps) {
+  const { items: rules, error: rulesError, reload: reloadRules } = useResource<ScoreRule>('/catalogs/score-rules', token, onUnauthorized)
   const [nationalId, setNationalId] = useState('')
   const [report, setReport] = useState<CreditReport | null>(null)
   const [loading, setLoading] = useState(false)
@@ -281,7 +298,7 @@ function ReportPage({ token, onUnauthorized }: PageProps) {
       setReport(await apiRequest<CreditReport>(`/credit-reports/${encodeURIComponent(id)}`, token))
     } catch (reason) {
       setError(getErrorMessage(reason))
-      if (reason instanceof ApiError && reason.status === 401) onUnauthorized()
+      if (reason instanceof ApiError && reason.status === 401) onUnauthorized(reason)
     } finally {
       setLoading(false)
     }
@@ -292,7 +309,7 @@ function ReportPage({ token, onUnauthorized }: PageProps) {
       <PageHeading eyebrow="CENTRO DE CONSULTA" title="Consulta crediticia" description="Consulta el historial consolidado de una persona por su número de cédula." />
       <section className="search-card">
         <div className="search-card-icon">⌕</div>
-        <div className="search-copy"><h2>Buscar historial</h2><p>La información se obtiene en tiempo real desde las instituciones reportantes.</p></div>
+        <div className="search-copy"><h2>Buscar historial</h2><p>Consulta los registros reportados y sus indicadores académicos simulados.</p></div>
         <form className="search-form" onSubmit={search}>
           <label className="sr-only" htmlFor="nationalId">Número de cédula</label>
           <span className="input-prefix">ID</span>
@@ -312,14 +329,14 @@ function ReportPage({ token, onUnauthorized }: PageProps) {
         <div className="search-hint"><span className="info-dot">i</span> Ingresa los 11 dígitos de la cédula, sin guiones.</div>
       </section>
       {error && <Notice message={error} />}
-      {report && <ReportResult report={report} />}
+      {report && <><ReportResult report={report} rules={rules} />{rulesError && <><Notice message={`No se pudieron cargar las reglas de simulación: ${rulesError}`} /><button className="button button-secondary" onClick={reloadRules}>Reintentar reglas</button></>}</>}
       {!report && !error && !loading && <div className="empty-prompt"><span className="empty-icon">⌕</span><strong>Tu consulta aparecerá aquí</strong><p>Ingresa una cédula para ver el resumen del historial crediticio.</p></div>}
       <div className="page-footnote"><span>◈</span> Los datos mostrados son confidenciales y deben tratarse conforme a las políticas de la institución.</div>
     </div>
   )
 }
 
-function ReportResult({ report }: { report: CreditReport }) {
+function ReportResult({ report, rules }: { report: CreditReport; rules: ScoreRule[] }) {
   return (
     <section className="report-results">
       <div className="person-summary">
@@ -332,10 +349,11 @@ function ReportResult({ report }: { report: CreditReport }) {
         <StatCard label="Monto aprobado total" value={formatMoney(report.summary.totalApprovedAmount)} icon="↗" />
         <StatCard label="Balance pendiente total" value={formatMoney(report.summary.totalOutstandingBalance)} icon="◷" accent />
       </div>
+      <Indicators report={report} rules={rules} />
       <div className="section-title-row"><div><h2>Productos crediticios</h2><p>Detalle de los productos reportados para esta persona.</p></div><span className="count-pill">{report.products.length} productos</span></div>
       {report.products.length === 0 ? <div className="table-empty">No hay productos reportados para esta persona.</div> : (
-        <div className="table-card"><table><thead><tr><th>INSTITUCIÓN</th><th>PRODUCTO</th><th>ESTADO</th><th>MONTO APROBADO</th><th>BALANCE ACTUAL</th><th>ATRASO</th></tr></thead>
-          <tbody>{report.products.map((product) => <tr key={product.id}><td><strong>{product.institutionName}</strong><small>{product.externalProductIdentifier}</small></td><td>{product.productTypeName}</td><td><StatusPill active={product.isActive}>{product.productStatusName}</StatusPill></td><td>{formatMoney(product.approvedAmount, product.currencyCode)}</td><td>{formatMoney(product.currentBalance, product.currencyCode)}</td><td>{product.latestDaysPastDue ? <span className="late-days">{product.latestDaysPastDue} días</span> : 'Al día'}</td></tr>)}</tbody>
+        <div className="table-card"><table><thead><tr><th>INSTITUCIÓN</th><th>PRODUCTO</th><th>ESTADO</th><th>MONTO APROBADO</th><th>BALANCE ACTUAL</th><th>ATRASO</th><th>APERTURA / CIERRE</th><th>ÚLTIMO REPORTE</th></tr></thead>
+          <tbody>{report.products.map((product) => <tr key={product.id}><td><strong>{product.institutionName}</strong><small>{product.externalProductIdentifier}</small></td><td>{product.productTypeName}</td><td><StatusPill active={product.isActive}>{product.productStatusName}</StatusPill></td><td>{formatMoney(product.approvedAmount, product.currencyCode)}</td><td>{formatMoney(product.currentBalance, product.currencyCode)}</td><td>{product.latestDaysPastDue ? <span className="late-days">{product.latestDaysPastDue} días</span> : 'Al día'}</td><td>{formatDate(product.openingDate)}<small>Cierre: {formatDate(product.closingDate)}</small></td><td>{formatDate(product.latestReportDate)}</td></tr>)}</tbody>
         </table></div>
       )}
     </section>
@@ -347,6 +365,7 @@ function PeoplePage({ token, account, onUnauthorized }: PageProps) {
   const [editing, setEditing] = useState<Person | null | undefined>(undefined)
   const [formError, setFormError] = useState('')
   const [saving, setSaving] = useState(false)
+  const [success, setSuccess] = useState('')
   const canCreate = account.roleCode === 'DATA_ENTRY'
   const canEdit = account.roleCode === 'ADMINISTRATOR'
 
@@ -364,14 +383,16 @@ function PeoplePage({ token, account, onUnauthorized }: PageProps) {
     }
     setSaving(true)
     setFormError('')
+    setSuccess('')
     try {
       const path = editing ? `/persons/${editing.id}` : '/persons'
       await apiRequest(path, token, { method: editing ? 'PUT' : 'POST', body: JSON.stringify(body) })
+      setSuccess(editing ? 'Datos personales actualizados.' : 'Persona registrada correctamente.')
       setEditing(undefined)
       reload()
     } catch (reason) {
       setFormError(getErrorMessage(reason))
-      if (reason instanceof ApiError && reason.status === 401) onUnauthorized()
+      if (reason instanceof ApiError && reason.status === 401) onUnauthorized(reason)
     } finally {
       setSaving(false)
     }
@@ -380,8 +401,9 @@ function PeoplePage({ token, account, onUnauthorized }: PageProps) {
   return (
     <div className="page-wrap">
       <PageHeading eyebrow="GESTIÓN DE INFORMACIÓN" title="Personas" description="Consulta el registro de personas y administra la información según tus permisos." action={canCreate ? <button className="button button-primary" onClick={() => { setFormError(''); setEditing(null) }}>＋ Registrar persona</button> : undefined} />
+      {success && <Notice message={success} kind="success" />}
       {error && <Notice message={error} />}
-      <DataTable loading={loading} error={error} empty="Todavía no hay personas registradas." count={people.length}>
+      <DataTable loading={loading} error={error} empty="Todavía no hay personas registradas." count={people.length} onRetry={reload}>
         <table><thead><tr><th>PERSONA</th><th>CÉDULA</th><th>FECHA DE NACIMIENTO</th><th>ESTADO</th>{canEdit && <th></th>}</tr></thead><tbody>
           {people.map((person) => <tr key={person.id}><td><strong>{personName(person)}</strong><small>Registro #{person.id}</small></td><td>{person.nationalId}</td><td>{formatDate(person.birthDate)}</td><td><StatusPill active={person.isActive}>{person.isActive ? 'Activa' : 'Inactiva'}</StatusPill></td>{canEdit && <td><button className="text-button" onClick={() => { setFormError(''); setEditing(person) }}>Editar</button></td>}</tr>)}
         </tbody></table>
@@ -406,10 +428,14 @@ function ProductsPage({ token, account, onUnauthorized }: PageProps) {
   const { items: products, loading, error, reload } = useResource<CreditProduct>('/credit-products', token, onUnauthorized)
   const { items: people } = useResource<Person>('/persons', token, onUnauthorized)
   const { items: institutions } = useResource<Institution>('/institutions', token, onUnauthorized)
+  const { items: types, loading: typesLoading, error: typesError, reload: reloadTypes } = useResource<CatalogItem>('/catalogs/product-types', token, onUnauthorized)
+  const { items: statuses, loading: statusesLoading, error: statusesError, reload: reloadStatuses } = useResource<CatalogItem>('/catalogs/product-statuses', token, onUnauthorized)
   const [editing, setEditing] = useState<CreditProduct | null | undefined>(undefined)
   const [formError, setFormError] = useState('')
   const [saving, setSaving] = useState(false)
+  const [success, setSuccess] = useState('')
   const canManage = account.roleCode === 'DATA_ENTRY'
+  const catalogError = typesError || statusesError
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -432,6 +458,7 @@ function ProductsPage({ token, account, onUnauthorized }: PageProps) {
       latestReportDate: optionalValue(data.get('latestReportDate')),
       latestDaysPastDue: Number(data.get('latestDaysPastDue')),
     }
+    if (editing && editing.institutionId !== account.institutionId) { setFormError('Solo puedes corregir productos de tu institución.'); return }
     setSaving(true)
     setFormError('')
     try {
@@ -439,11 +466,12 @@ function ProductsPage({ token, account, onUnauthorized }: PageProps) {
         method: editing ? 'PUT' : 'POST',
         body: JSON.stringify(body),
       })
+      setSuccess(editing ? 'Producto actualizado correctamente.' : 'Producto registrado en tu institución.')
       setEditing(undefined)
       reload()
     } catch (reason) {
       setFormError(getErrorMessage(reason))
-      if (reason instanceof ApiError && reason.status === 401) onUnauthorized()
+      if (reason instanceof ApiError && reason.status === 401) onUnauthorized(reason)
     } finally {
       setSaving(false)
     }
@@ -451,11 +479,13 @@ function ProductsPage({ token, account, onUnauthorized }: PageProps) {
 
   return (
     <div className="page-wrap">
-      <PageHeading eyebrow="GESTIÓN DE INFORMACIÓN" title="Productos crediticios" description="Consulta los productos reportados y registra información de tu institución." action={canManage ? <button className="button button-primary" onClick={() => { setFormError(''); setEditing(null) }}>＋ Registrar producto</button> : undefined} />
+      <PageHeading eyebrow="GESTIÓN DE INFORMACIÓN" title="Productos crediticios" description="Consulta los productos reportados y registra información de tu institución." action={canManage ? <button className="button button-primary" disabled={typesLoading || statusesLoading || Boolean(catalogError) || !account.institutionId} onClick={() => { setFormError(''); setEditing(null) }}>＋ Registrar producto</button> : undefined} />
       {error && <Notice message={error} />}
-      <DataTable loading={loading} error={error} empty="Todavía no hay productos crediticios registrados." count={products.length}>
+      {catalogError && <><Notice message={`No se pudieron cargar los catálogos: ${catalogError}`} /><button className="button button-secondary" onClick={() => { reloadTypes(); reloadStatuses() }}>Reintentar catálogos</button></>}
+      {success && <Notice message={success} kind="success" />}
+      <DataTable loading={loading} error={error} empty="Todavía no hay productos crediticios registrados." count={products.length} onRetry={reload}>
         <table><thead><tr><th>PRODUCTO</th><th>PERSONA</th><th>INSTITUCIÓN</th><th>MONTO / BALANCE</th><th>ESTADO</th>{canManage && <th></th>}</tr></thead><tbody>
-          {products.map((product) => <tr key={product.id}><td><strong>{product.productTypeName}</strong><small>{product.externalProductIdentifier}</small></td><td>{product.personNationalId}</td><td>{product.institutionName}</td><td>{formatMoney(product.approvedAmount, product.currencyCode)}<small>Balance {formatMoney(product.currentBalance, product.currencyCode)}</small></td><td><StatusPill active={product.isActive}>{product.productStatusName}</StatusPill></td>{canManage && <td><button className="text-button" onClick={() => { setFormError(''); setEditing(product) }}>Editar</button></td>}</tr>)}
+          {products.map((product) => <tr key={product.id}><td><strong>{product.productTypeName}</strong><small>{product.externalProductIdentifier}</small></td><td>{product.personNationalId}</td><td>{product.institutionName}</td><td>{formatMoney(product.approvedAmount, product.currencyCode)}<small>Balance {formatMoney(product.currentBalance, product.currencyCode)}</small></td><td><StatusPill active={product.isActive}>{product.productStatusName}</StatusPill></td>{canManage && <td>{product.institutionId === account.institutionId ? <button className="text-button" disabled={Boolean(catalogError) || typesLoading || statusesLoading} onClick={() => { setFormError(''); setEditing(product) }}>Editar</button> : <span className="read-only-label">Solo consulta</span>}</td>}</tr>)}
         </tbody></table>
       </DataTable>
       {editing !== undefined && <Modal title={editing ? 'Editar producto crediticio' : 'Registrar producto crediticio'} onClose={() => setEditing(undefined)}>
@@ -463,8 +493,8 @@ function ProductsPage({ token, account, onUnauthorized }: PageProps) {
         <form className="form-grid" onSubmit={submit}>
           <label className="form-field"><span>Persona</span><select name="personId" defaultValue={editing?.personId ?? ''} required><option value="" disabled>Selecciona una persona</option>{people.filter((person) => person.isActive).map((person) => <option key={person.id} value={person.id}>{person.nationalId} · {personName(person)}</option>)}</select></label>
           <label className="form-field"><span>Institución</span><select name="institutionId" defaultValue={editing?.institutionId ?? account.institutionId ?? ''} disabled={account.roleCode === 'DATA_ENTRY'}><option value="">Institución asociada a mi cuenta</option>{institutions.map((item) => <option key={item.id} value={item.id}>{item.legalName}</option>)}</select>{account.roleCode === 'DATA_ENTRY' && <small>Los productos se registran en la institución de tu cuenta.</small>}</label>
-          <label className="form-field"><span>Tipo de producto</span><select name="productTypeCode" defaultValue={editing?.productTypeCode ?? 'CREDIT_CARD'}><option value="CREDIT_CARD">Tarjeta de crédito</option><option value="LOAN">Préstamo</option><option value="MORTGAGE">Hipoteca</option></select></label>
-          <label className="form-field"><span>Estado</span><select name="productStatusCode" defaultValue={editing?.productStatusCode ?? 'OPEN'}><option value="OPEN">Abierto</option><option value="CLOSED">Cerrado</option><option value="CANCELLED">Cancelado</option></select></label>
+          <label className="form-field"><span>Tipo de producto *</span><select name="productTypeCode" defaultValue={editing?.productTypeCode ?? ''} required><option value="" disabled>Selecciona un tipo</option>{types.map(item => <option key={item.id} value={item.code}>{item.name}</option>)}</select></label>
+          <label className="form-field"><span>Estado *</span><select name="productStatusCode" defaultValue={editing?.productStatusCode ?? ''} required><option value="" disabled>Selecciona un estado</option>{statuses.map(item => <option key={item.id} value={item.code}>{item.name}</option>)}</select></label>
           <Field label="Identificador externo" name="externalProductIdentifier" defaultValue={editing?.externalProductIdentifier} required maxLength={100} />
           <Field label="Moneda (ISO 4217)" name="currencyCode" defaultValue={editing?.currencyCode ?? 'DOP'} required pattern="[A-Za-z]{3}" maxLength={3} />
           <Field label="Monto aprobado" name="approvedAmount" type="number" defaultValue={editing?.approvedAmount ?? 0} min="0" step="0.01" required />
@@ -480,11 +510,14 @@ function ProductsPage({ token, account, onUnauthorized }: PageProps) {
   )
 }
 
-function InstitutionsPage({ token, onUnauthorized }: PageProps) {
+function InstitutionsPage({ token, account, onUnauthorized }: PageProps) {
   const { items, loading, error, reload } = useResource<Institution>('/institutions', token, onUnauthorized)
   const [creating, setCreating] = useState(false)
   const [formError, setFormError] = useState('')
   const [saving, setSaving] = useState(false)
+  const [success, setSuccess] = useState('')
+  const canCreate = account.roleCode === 'ADMINISTRATOR'
+  const { items: types, loading: typesLoading, error: typesError, reload: reloadTypes } = useResource<CatalogItem>('/catalogs/institution-types', token, onUnauthorized, canCreate)
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -500,11 +533,12 @@ function InstitutionsPage({ token, onUnauthorized }: PageProps) {
     setFormError('')
     try {
       await apiRequest('/institutions', token, { method: 'POST', body: JSON.stringify(body) })
+      setSuccess('Institución registrada correctamente.')
       setCreating(false)
       reload()
     } catch (reason) {
       setFormError(getErrorMessage(reason))
-      if (reason instanceof ApiError && reason.status === 401) onUnauthorized()
+      if (reason instanceof ApiError && reason.status === 401) onUnauthorized(reason)
     } finally {
       setSaving(false)
     }
@@ -512,15 +546,17 @@ function InstitutionsPage({ token, onUnauthorized }: PageProps) {
 
   return (
     <div className="page-wrap">
-      <PageHeading eyebrow="ADMINISTRACIÓN" title="Instituciones" description="Administra las instituciones autorizadas para reportar información al sistema." action={<button className="button button-primary" onClick={() => { setFormError(''); setCreating(true) }}>＋ Nueva institución</button>} />
+      <PageHeading eyebrow={canCreate ? 'ADMINISTRACIÓN' : 'DIRECTORIO INSTITUCIONAL'} title="Instituciones" description="Instituciones autorizadas para participar en el sistema." action={canCreate ? <button className="button button-primary" disabled={typesLoading || Boolean(typesError)} onClick={() => { setFormError(''); setCreating(true) }}>＋ Nueva institución</button> : undefined} />
       {error && <Notice message={error} />}
-      <DataTable loading={loading} error={error} empty="No hay instituciones registradas." count={items.length}>
+      {typesError && <><Notice message={typesError} /><button className="button button-secondary" onClick={reloadTypes}>Reintentar catálogos</button></>}
+      {success && <Notice message={success} kind="success" />}
+      <DataTable loading={loading} error={error} empty="No hay instituciones registradas." count={items.length} onRetry={reload}>
         <table><thead><tr><th>INSTITUCIÓN</th><th>CÓDIGO</th><th>RNC</th><th>TIPO</th><th>ESTADO</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td><strong>{item.commercialName || item.legalName}</strong><small>{item.legalName}</small></td><td>{item.code}</td><td>{item.rnc}</td><td>{item.institutionTypeName}</td><td><StatusPill active={item.isActive}>{item.isActive ? 'Activa' : 'Inactiva'}</StatusPill></td></tr>)}</tbody></table>
       </DataTable>
       {creating && <Modal title="Registrar institución" onClose={() => setCreating(false)}>
         {formError && <Notice message={formError} />}
         <form className="form-grid" onSubmit={submit}>
-          <label className="form-field"><span>Tipo de institución</span><select name="institutionTypeId" defaultValue="1"><option value="1">Banco</option><option value="2">Cooperativa</option><option value="3">Entidad financiera</option><option value="4">Empresa comercial</option></select></label>
+          <label className="form-field"><span>Tipo de institución *</span><select name="institutionTypeId" defaultValue="" required><option value="" disabled>Selecciona un tipo</option>{types.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
           <Field label="Código institucional" name="code" required maxLength={30} />
           <Field label="RNC" name="rnc" required pattern="[0-9]{9,11}" maxLength={11} help="9 a 11 dígitos." />
           <Field label="Razón social" name="legalName" required maxLength={180} />
@@ -535,11 +571,15 @@ function InstitutionsPage({ token, onUnauthorized }: PageProps) {
 function AccountsPage({ token, account, onUnauthorized }: PageProps) {
   const { items, loading, error, reload } = useResource<Account>('/accounts', token, onUnauthorized)
   const { items: institutions } = useResource<Institution>('/institutions', token, onUnauthorized)
+  const { items: roles, loading: rolesLoading, error: rolesError, reload: reloadRoles } = useResource<CatalogItem>('/catalogs/roles', token, onUnauthorized)
   const [creating, setCreating] = useState(false)
   const [formError, setFormError] = useState('')
   const [saving, setSaving] = useState(false)
   const [newRole, setNewRole] = useState<Account['roleCode']>('CONSUMER')
   const [newInstitutionId, setNewInstitutionId] = useState('')
+  const [statusTarget, setStatusTarget] = useState<Account | null>(null)
+  const [changingStatus, setChangingStatus] = useState(false)
+  const [success, setSuccess] = useState('')
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -556,41 +596,49 @@ function AccountsPage({ token, account, onUnauthorized }: PageProps) {
     setFormError('')
     try {
       await apiRequest('/accounts', token, { method: 'POST', body: JSON.stringify(body) })
+      setSuccess('Cuenta de usuario creada correctamente.')
       setCreating(false)
       reload()
     } catch (reason) {
       setFormError(getErrorMessage(reason))
-      if (reason instanceof ApiError && reason.status === 401) onUnauthorized()
+      if (reason instanceof ApiError && reason.status === 401) onUnauthorized(reason)
     } finally {
       setSaving(false)
     }
   }
 
-  async function toggleStatus(item: Account) {
+  async function toggleStatus(item: Account, reason: string) {
     if (item.id === account.id) {
       setFormError('No puedes cambiar el estado de tu propia cuenta.')
       return
     }
     setFormError('')
+    setChangingStatus(true)
     try {
       await apiRequest(`/accounts/${item.id}/status`, token, {
         method: 'PATCH',
-        body: JSON.stringify({ isActive: !item.isActive, reason: 'Cambio realizado desde el panel SNIC.' }),
+        body: JSON.stringify({ isActive: !item.isActive, reason }),
       })
+      setSuccess(item.isActive ? 'Cuenta desactivada. Sus accesos anteriores ya no son válidos.' : 'Cuenta activada correctamente.')
+      setStatusTarget(null)
       reload()
     } catch (reason) {
       setFormError(getErrorMessage(reason))
-      if (reason instanceof ApiError && reason.status === 401) onUnauthorized()
+      if (reason instanceof ApiError && reason.status === 401) onUnauthorized(reason)
+    } finally {
+      setChangingStatus(false)
     }
   }
 
   return (
     <div className="page-wrap">
-      <PageHeading eyebrow="ADMINISTRACIÓN" title="Cuentas de usuario" description="Crea cuentas institucionales y administra su acceso al sistema." action={<button className="button button-primary" onClick={() => { setFormError(''); setNewRole('CONSUMER'); setNewInstitutionId(''); setCreating(true) }}>＋ Nueva cuenta</button>} />
+      <PageHeading eyebrow="ADMINISTRACIÓN" title="Cuentas de usuario" description="Crea cuentas institucionales y administra su acceso al sistema." action={<button className="button button-primary" disabled={rolesLoading || Boolean(rolesError)} onClick={() => { setFormError(''); setNewRole('CONSUMER'); setNewInstitutionId(''); setCreating(true) }}>＋ Nueva cuenta</button>} />
+      {rolesError && <><Notice message={rolesError} /><button className="button button-secondary" onClick={reloadRoles}>Reintentar roles</button></>}
+      {success && <Notice message={success} kind="success" />}
       {formError && <Notice message={formError} />}
       {error && <Notice message={error} />}
-      <DataTable loading={loading} error={error} empty="No hay cuentas de usuario registradas." count={items.length}>
-        <table><thead><tr><th>USUARIO</th><th>INSTITUCIÓN</th><th>ROL</th><th>ÚLTIMO ACCESO</th><th>ESTADO</th><th></th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td><strong>{item.displayName}</strong><small>{item.username} · {item.email}</small></td><td>{item.institutionName ?? 'SNIC'}</td><td><span className="role-pill">{roleNames[item.roleCode]}</span></td><td>{formatDate(item.lastLoginAt)}</td><td><StatusPill active={item.isActive}>{item.isActive ? 'Activa' : 'Inactiva'}</StatusPill></td><td><button className="text-button" disabled={item.id === account.id} onClick={() => void toggleStatus(item)}>{item.isActive ? 'Desactivar' : 'Activar'}</button></td></tr>)}</tbody></table>
+      <DataTable loading={loading} error={error} empty="No hay cuentas de usuario registradas." count={items.length} onRetry={reload}>
+        <table><thead><tr><th>USUARIO</th><th>INSTITUCIÓN</th><th>ROL</th><th>ÚLTIMO ACCESO</th><th>ESTADO</th><th></th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td><strong>{item.displayName}</strong><small>{item.username} · {item.email}</small></td><td>{item.institutionName ?? 'SNIC'}</td><td><span className="role-pill">{roleNames[item.roleCode]}</span></td><td>{formatDateTime(item.lastLoginAt)}</td><td><StatusPill active={item.isActive}>{item.isActive ? 'Activa' : 'Inactiva'}</StatusPill></td><td><button className="text-button" disabled={item.id === account.id} onClick={() => { setFormError(''); setStatusTarget(item) }}>{item.isActive ? 'Desactivar' : 'Activar'}</button></td></tr>)}</tbody></table>
       </DataTable>
       {creating && <Modal title="Crear cuenta de usuario" onClose={() => setCreating(false)}>
         {formError && <Notice message={formError} />}
@@ -598,46 +646,24 @@ function AccountsPage({ token, account, onUnauthorized }: PageProps) {
           <Field label="Nombre completo" name="displayName" required maxLength={180} />
           <Field label="Nombre de usuario" name="username" required minLength={3} maxLength={100} />
           <Field label="Correo electrónico" name="email" type="email" required maxLength={180} />
-          <label className="form-field"><span>Rol</span><select name="roleCode" value={newRole} onChange={(event) => { const role = event.target.value; if (!isRoleCode(role)) return; setNewRole(role); if (role === 'ADMINISTRATOR') setNewInstitutionId('') }}><option value="CONSUMER">Entidad consumidora</option><option value="DATA_ENTRY">Registrador</option><option value="ADMINISTRATOR">Administrador</option></select></label>
-          <label className="form-field"><span>Institución</span><select name="institutionId" value={newRole === 'ADMINISTRATOR' ? '' : newInstitutionId} onChange={(event) => setNewInstitutionId(event.target.value)} required={newRole !== 'ADMINISTRATOR'} disabled={newRole === 'ADMINISTRATOR'}><option value="">Sin institución</option>{institutions.map((item) => <option key={item.id} value={item.id}>{item.legalName}</option>)}</select><small>{newRole === 'ADMINISTRATOR' ? 'Las cuentas administradoras no pertenecen a una institución.' : 'Obligatoria para cuentas consumidoras y registradoras.'}</small></label>
+          <label className="form-field"><span>Rol *</span><select name="roleCode" value={newRole} required onChange={(event) => { const role = event.target.value; if (!isRoleCode(role)) return; setNewRole(role); if (role === 'ADMINISTRATOR') setNewInstitutionId('') }}>{roles.filter(item => isRoleCode(item.code)).map(item => <option key={item.id} value={item.code}>{item.name}</option>)}</select></label>
+          <label className="form-field"><span>Institución</span><select name="institutionId" value={newRole === 'ADMINISTRATOR' ? '' : newInstitutionId} onChange={(event) => setNewInstitutionId(event.target.value)} required={newRole !== 'ADMINISTRATOR'} disabled={newRole === 'ADMINISTRATOR'}><option value="">Sin institución</option>{institutions.filter(item => item.isActive).map((item) => <option key={item.id} value={item.id}>{item.legalName}</option>)}</select><small>{newRole === 'ADMINISTRATOR' ? 'Las cuentas administradoras no pertenecen a una institución.' : 'Obligatoria para cuentas consumidoras y registradoras.'}</small></label>
           <Field label="Contraseña temporal" name="password" type="password" required minLength={12} maxLength={128} help="Debe tener al menos 12 caracteres." />
           <div className="form-actions"><button type="button" className="button button-secondary" onClick={() => setCreating(false)}>Cancelar</button><button className="button button-primary" disabled={saving}>{saving ? 'Creando…' : 'Crear cuenta'}</button></div>
+        </form>
+      </Modal>}
+      {statusTarget && <Modal title={statusTarget.isActive ? 'Desactivar cuenta' : 'Activar cuenta'} onClose={() => { if (!changingStatus) setStatusTarget(null) }}>
+        <p className="confirmation-copy">{statusTarget.isActive ? 'Se impedirá el acceso de esta cuenta, incluso si tiene una sesión abierta.' : 'Esta cuenta podrá iniciar sesión nuevamente.'} <strong>{statusTarget.displayName} ({statusTarget.username})</strong></p>
+        {formError && <Notice message={formError} />}
+        <form className="form-grid" onSubmit={event => { event.preventDefault(); const data = new FormData(event.currentTarget); void toggleStatus(statusTarget, String(data.get('reason') ?? '').trim()) }}>
+          <Field label="Motivo" name="reason" required maxLength={300} defaultValue="Cambio de acceso realizado desde SNIC." />
+          <div className="form-actions"><button type="button" className="button button-secondary" disabled={changingStatus} onClick={() => setStatusTarget(null)}>Cancelar</button><button className="button button-primary" disabled={changingStatus}>{changingStatus ? 'Guardando…' : 'Confirmar cambio'}</button></div>
         </form>
       </Modal>}
     </div>
   )
 }
 
-function PageHeading({ eyebrow, title, description, action }: { eyebrow: string; title: string; description: string; action?: ReactNode }) {
-  return <div className="page-heading"><div><span className="eyebrow">{eyebrow}</span><h1>{title}</h1><p>{description}</p></div>{action && <div className="heading-action">{action}</div>}</div>
-}
-
-function StatCard({ label, value, icon, accent = false }: { label: string; value: string; icon: string; accent?: boolean }) {
-  return <div className={`stat-card ${accent ? 'stat-accent' : ''}`}><span className="stat-icon">{icon}</span><span className="stat-label">{label}</span><strong>{value}</strong></div>
-}
-
-function StatusPill({ active, children }: { active: boolean; children: ReactNode }) {
-  return <span className={`status-pill ${active ? 'status-active' : 'status-inactive'}`}><span />{children}</span>
-}
-
-function Notice({ message }: { message: string }) {
-  return <div className="notice" role="alert"><span>!</span><p>{message}</p></div>
-}
-
-function DataTable({ loading, error, empty, count, children }: { loading: boolean; error: string; empty: string; count: number; children: ReactNode }) {
-  if (loading) return <div className="table-card table-loading"><span className="spinner" />Cargando información…</div>
-  if (error) return <div className="table-card table-empty">No fue posible cargar la información. Revisa la conexión con la API.</div>
-  if (!count) return <div className="table-card table-empty"><span className="empty-icon">▤</span>{empty}</div>
-  return <div className="table-card">{children}</div>
-}
-
-function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
-  return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><section className="modal-panel" role="dialog" aria-modal="true" aria-labelledby="modal-title"><header className="modal-header"><div><span className="eyebrow">SNIC · FORMULARIO</span><h2 id="modal-title">{title}</h2></div><button className="modal-close" onClick={onClose} aria-label="Cerrar">×</button></header><div className="modal-content">{children}</div></section></div>
-}
-
-function Field({ label, name, help, ...props }: { label: string; name: string; help?: string; type?: string; defaultValue?: string | number; required?: boolean; minLength?: number; maxLength?: number; min?: string; max?: string; step?: string; pattern?: string }) {
-  return <label className="form-field"><span>{label}</span><input name={name} {...props} />{help && <small>{help}</small>}</label>
-}
 
 function optionalValue(value: FormDataEntryValue | null): string | null {
   const result = String(value ?? '').trim()

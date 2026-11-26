@@ -8,3 +8,5 @@
 *.user
 *.suo
 .tmp-pdf-extract/
+**/test-results/
+**/playwright-report/

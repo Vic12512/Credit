@@ -1,32 +1,21 @@
-# React + TypeScript + Vite
+# SNIC Web
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Frontend React + TypeScript para consultar y administrar información crediticia a través de `Snic.Api`.
 
-Currently, two official plugins are available:
+## Desarrollo local
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+1. Inicia la API desde `src/Snic.Api` y confirma que su dirección coincida con `VITE_API_BASE_URL`.
+2. Copia `.env.example` a `.env.local` si necesitas configurar otra dirección de API.
+3. Usa Node.js 20.19 o posterior, ejecuta `npm ci` y luego `npm run dev`.
 
-## React Compiler
+La URL base predeterminada es `http://localhost:5041/api/v1`. El backend debe permitir el origen local del frontend en su configuración CORS.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Funcionalidad
 
-## Expanding the Oxlint configuration
+- Inicio de sesión JWT y validación de la sesión con `/auth/me`.
+- Consulta de reporte consolidado por cédula.
+- Listado de personas y productos; los registradores pueden crear personas/productos y actualizar productos.
+- Administración de cuentas e instituciones para administradores; actualización de datos de personas para administradores.
+- Los permisos de navegación se muestran según el rol devuelto por la API; el backend sigue siendo responsable de autorizar cada operación.
 
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
-```
-
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+El reporte presenta los campos que devuelve la API: persona, resumen y productos. No se estiman puntuaciones o niveles de riesgo en el cliente.

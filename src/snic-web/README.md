@@ -133,8 +133,27 @@ npm.cmd run preview --prefix src\snic-web
 
 - Inicio de sesión JWT y validación de sesión con `/auth/me`.
 - Consulta de reporte consolidado por cédula.
+- Visualización de score, riesgo y porcentaje de incumplimiento devueltos por el backend, identificados como simulados; las reglas se consultan desde `/catalogs/score-rules`. Sin historial se muestran indicadores no disponibles, nunca un score inventado.
 - Listado de personas y productos; los registradores pueden crear personas y crear o corregir productos de su institución.
 - Administración de cuentas e instituciones para administradores; los administradores también pueden corregir datos personales.
 - Las opciones visibles dependen del rol, pero la API es quien autoriza cada operación.
+- Directorio de instituciones en modo consulta para los tres roles; la creación sigue reservada al administrador.
+- Auditoría para administradores: filtros por fechas locales, cuenta, institución, persona, operación y resultado; paginación; y detalle de valores anteriores y nuevos.
+- Tipos de institución, tipos y estados de producto y roles cargados desde los catálogos de la API.
+- Manejo de errores por código, mensajes de validación del servidor, reintentos de carga y cierre de sesión ante respuestas 401 o vencimiento local del JWT.
+- Confirmación y motivo para activar o desactivar cuentas, mensajes de éxito y diálogos navegables por teclado.
 
-El reporte presenta los campos que devuelve la API: persona, resumen y productos. El cliente no estima puntuaciones ni niveles de riesgo. Para la configuración completa de la API y SQL Server, consulta el [README del repositorio](../../README.md) y el [manual de uso de la API](../../docs/Manual_Uso_API.md).
+El reporte presenta persona, resumen, productos, fechas e indicadores. El cliente no calcula puntuaciones ni niveles de riesgo: muestra los valores recibidos de la API. Para la configuración completa de la API y SQL Server, consulta el [README del repositorio](../../README.md) y el [manual de uso de la API](../../docs/Manual_Uso_API.md).
+
+## Pruebas de navegador
+
+Con SQL Server y la API activos, las cuentas ficticias `admin`, `consumer.demo` y `dataentry.demo`, y productos de al menos dos instituciones:
+
+```powershell
+npm.cmd ci --prefix src\snic-web
+npm.cmd run test:e2e --prefix src\snic-web
+```
+
+Playwright es una dependencia de desarrollo local. En Windows, las pruebas utilizan Microsoft Edge ya instalado; puedes elegir Chrome instalado con `$env:PLAYWRIGHT_CHANNEL='chrome'`. En otros sistemas debe estar disponible un navegador compatible con Playwright. La API de pruebas predeterminada es `http://localhost:5041/api/v1/`; puedes cambiarla con `SNIC_API_URL`, y el `.env` de Vite debe apuntar a la misma API. Las credenciales de prueba pueden configurarse con `SNIC_ADMIN_USER`, `SNIC_ADMIN_PASSWORD`, `SNIC_CONSUMER_USER`, `SNIC_CONSUMER_PASSWORD`, `SNIC_ENTRY_USER` y `SNIC_ENTRY_PASSWORD`.
+
+Las nueve pruebas verifican reportes e indicadores, casos sin historial, errores, permisos de consulta, edición de productos propios, filtros y detalles de auditoría, navegación móvil, sesiones vencidas, registro de personas y cambios de estado de cuentas. Generan registros ficticios que permanecen en la base. Los reportes y capturas se guardan en `playwright-report/` y `test-results/`, ignorados por Git. Vite se reutiliza si ya está iniciado, o se levanta temporalmente para la prueba.

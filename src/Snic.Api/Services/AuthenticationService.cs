@@ -11,7 +11,8 @@ public sealed class AuthenticationService(
     SnicDbContext dbContext,
     IUserAccountRepository accounts,
     IPasswordService passwords,
-    ITokenService tokens) : IAuthenticationService
+    ITokenService tokens,
+    IAuditService audit) : IAuthenticationService
 {
     public async Task<ServiceResult<AccountResponse>> SetupAsync(SetupRequest request, CancellationToken cancellationToken)
     {
@@ -35,6 +36,9 @@ public sealed class AuthenticationService(
             IsActive = true
         };
         accounts.Add(account);
+        await accounts.SaveChangesAsync(cancellationToken);
+        audit.AddSuccess(account.Id, "SETUP_ADMIN_CREATED", "UserAccount", account.Id, null, null,
+            null, new { account.Username, account.Email, RoleCode = role.Code, account.IsActive }, null);
         await accounts.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return ServiceResult<AccountResponse>.Ok(Map(account), StatusCodes.Status201Created);

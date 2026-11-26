@@ -12,6 +12,7 @@ public sealed class CreditProductService(
     IPersonRepository persons,
     IInstitutionRepository institutions,
     IUserAccountRepository accounts,
+    IAcademicIndicatorService indicators,
     IAuditService audit) : ICreditProductService
 {
     public async Task<IReadOnlyList<CreditProductResponse>> ListAsync(CancellationToken cancellationToken) =>
@@ -130,7 +131,10 @@ public sealed class CreditProductService(
             personProducts.Sum(x => x.ApprovedAmount),
             personProducts.Sum(x => x.CurrentBalance));
         return ServiceResult<ConsolidatedCreditReportResponse>.Ok(new ConsolidatedCreditReportResponse(
-            PersonService.Map(person), personProducts.Count > 0, summary, personProducts));
+            PersonService.Map(person), personProducts.Count > 0, summary, personProducts,
+            personProducts.Count > 0 ? "CREDIT_REPORT_FOUND" : "NO_CREDIT_HISTORY",
+            personProducts.Count > 0 ? "Reporte crediticio encontrado." : "La persona existe, pero no tiene historial crediticio.",
+            await indicators.CalculateAsync(person.Id, cancellationToken)));
     }
 
     private async Task<ServiceResult<int>> ResolveWriterInstitutionAsync(long accountId, int? requestedInstitutionId, CancellationToken cancellationToken)

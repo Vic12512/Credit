@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.OpenApi;
+using Snic.Api.Contracts;
 using Swashbuckle.AspNetCore.SwaggerGen;
 
 namespace Snic.Api.Infrastructure;
@@ -8,6 +9,29 @@ public sealed class SwaggerPermissionsOperationFilter : IOperationFilter
 {
     public void Apply(OpenApiOperation operation, OperationFilterContext context)
     {
+        operation.Responses ??= new OpenApiResponses();
+        var errorSchema = context.SchemaGenerator.GenerateSchema(typeof(ApiError), context.SchemaRepository);
+        foreach (var status in new[] { "400", "401", "403", "404", "409", "500" })
+        {
+            if (!operation.Responses.ContainsKey(status))
+                operation.Responses[status] = new OpenApiResponse { Description = status switch
+                {
+                    "400" => "Datos inválidos; errors identifica los campos.",
+                    "401" => "Credenciales o token inválidos o vencidos; code identifica el caso.",
+                    "403" => "Permisos insuficientes o producto de otra institución.",
+                    "404" => "Persona o recurso inexistente.",
+                    "409" => "Registro duplicado o conflicto.",
+                    _ => "Error interno de la API."
+                }};
+            operation.Responses[status] = new OpenApiResponse
+            {
+                Description = operation.Responses[status].Description,
+                Content = new Dictionary<string, OpenApiMediaType>
+                {
+                    ["application/json"] = new() { Schema = errorSchema }
+                }
+            };
+        }
         var attributes = context.MethodInfo.DeclaringType!.GetCustomAttributes(true)
             .Concat(context.MethodInfo.GetCustomAttributes(true)).ToArray();
         if (attributes.OfType<AllowAnonymousAttribute>().Any())

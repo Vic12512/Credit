@@ -73,6 +73,8 @@ Los tres roles pueden consultar instituciones, personas, productos y reportes. `
 
 ## Migraciones posteriores
 
+RF-08 a RF-10: el reporte consolidado incluye indicadores académicos simulados; los errores exponen códigos estables para React; y `/api/v1/audit-logs` permite al administrador consultar la auditoría con filtros y paginación. Los catálogos para formularios están bajo `/api/v1/catalogs/`. Las pruebas de integración se ejecutan con `scripts/Test-ApiPermissions.ps1` y `scripts/Test-BackendRequirements.ps1`; los requisitos y ejemplos están en el manual. Estas funciones utilizan las tablas existentes y no requieren otra migración.
+
 ```powershell
 dotnet tool run dotnet-ef migrations add NombreDescriptivo --project src/Snic.Api --output-dir Infrastructure/Migrations
 dotnet tool run dotnet-ef database update --project src/Snic.Api

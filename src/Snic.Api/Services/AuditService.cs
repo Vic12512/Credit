@@ -4,7 +4,7 @@ using Snic.Api.Infrastructure;
 
 namespace Snic.Api.Services;
 
-public sealed class AuditService(SnicDbContext dbContext) : IAuditService
+public sealed class AuditService(SnicDbContext dbContext, RequestAuditState state) : IAuditService
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
@@ -19,6 +19,7 @@ public sealed class AuditService(SnicDbContext dbContext) : IAuditService
         object? newValues,
         string? ipAddress)
     {
+        state.DetailedAuditRecorded = true;
         dbContext.AuditLogs.Add(new AuditLog
         {
             AccountId = accountId,

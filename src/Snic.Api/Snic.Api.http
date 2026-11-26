@@ -72,3 +72,27 @@ Content-Type: application/json
 ### Consulta consolidada por cédula (cualquiera de los tres roles)
 GET {{host}}/api/v1/credit-reports/00112345678
 Authorization: Bearer {{token}}
+
+### Catálogos para formularios (los tres roles)
+GET {{host}}/api/v1/catalogs/institution-types
+Authorization: Bearer {{token}}
+
+### Tipos de producto
+GET {{host}}/api/v1/catalogs/product-types
+Authorization: Bearer {{token}}
+
+### Estados de producto
+GET {{host}}/api/v1/catalogs/product-statuses
+Authorization: Bearer {{token}}
+
+### Reglas de simulación académica
+GET {{host}}/api/v1/catalogs/score-rules
+Authorization: Bearer {{token}}
+
+### Roles para crear cuentas (ADMINISTRATOR)
+GET {{host}}/api/v1/catalogs/roles
+Authorization: Bearer {{token}}
+
+### Auditoría paginada (ADMINISTRATOR)
+GET {{host}}/api/v1/audit-logs?from=2026-11-01T00:00:00Z&to=2026-11-30T23:59:59Z&page=1&pageSize=20
+Authorization: Bearer {{token}}

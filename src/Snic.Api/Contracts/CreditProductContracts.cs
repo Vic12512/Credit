@@ -61,4 +61,7 @@ public sealed record ConsolidatedCreditReportResponse(
     PersonResponse Person,
     bool HasCreditHistory,
     CreditReportSummary Summary,
-    IReadOnlyList<CreditProductResponse> Products);
+    IReadOnlyList<CreditProductResponse> Products,
+    string Code,
+    string Message,
+    AcademicIndicatorsResponse Indicators);
